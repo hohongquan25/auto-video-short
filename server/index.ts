@@ -6,8 +6,8 @@ import { extname, join } from "node:path";
 import { z } from "zod";
 import { config, paths } from "./config.js";
 import {
-  deleteJob, ensureDataDirs, getBackground, getStyle, isValidId, jobDir, listBackgrounds,
-  listJobs, listStyles, newId, saveBackgrounds, saveJob, saveStyles,
+  deleteJob, ensureDataDirs, getBackground, getBrand, getStyle, isValidId, jobDir, listBackgrounds,
+  listJobs, listStyles, newId, saveBackgrounds, saveBrand, saveJob, saveStyles,
 } from "./store.js";
 import { cancel, enqueue, isBusy, liveJob, notify, resumeOnStartup } from "./queue.js";
 import { jobLinks } from "./webhook.js";
@@ -153,6 +153,10 @@ const settingsSchema = z.object({
   rate: rateSchema,
   backgroundId: z.string().min(1),
   reviewBeforeTts: z.boolean(),
+  subtitles: z.boolean().default(false),
+  fullVideo: z.boolean().default(false),
+  format: z.enum(["original", "tiktok", "youtube"]).default("original"),
+  fit: z.enum(["blur", "crop"]).default("blur"),
   minPartSec: z.number().min(10).max(3600),
   maxPartSec: z.number().min(20).max(3600),
 }).refine((s) => s.maxPartSec > s.minPartSec, { message: "Độ dài tối đa phải lớn hơn tối thiểu" });
@@ -204,16 +208,27 @@ app.post("/api/sources/probe", async (req, res) => {
   res.json(await probeOrReject(url.trim()));
 });
 
+const topicSchema = z.object({
+  prompt: z.string().trim().min(5, "Chủ đề truyện quá ngắn").max(4000, "Chủ đề truyện quá dài (tối đa 4000 ký tự)"),
+  minMinutes: z.number().min(3).max(120),
+  maxMinutes: z.number().min(3).max(120),
+}).refine((t) => t.maxMinutes >= t.minMinutes, { message: "Độ dài truyện tối đa phải lớn hơn hoặc bằng tối thiểu" });
+
 /**
- * Create a job from an uploaded file (multipart field "media") or a video link
- * (field "url"; multipart or JSON body). "settings" is a JSON string in
- * multipart and may be a plain object in a JSON body.
+ * Create a job from an uploaded file (multipart field "media"), a video link
+ * (field "url"), or a topic the AI writes a story from (field "topic":
+ * {prompt, minMinutes, maxMinutes}). "settings" and "topic" are JSON strings
+ * in multipart and may be plain objects in a JSON body.
  */
 app.post("/api/jobs", upload.single("media"), async (req, res) => {
   const file = req.file;
   try {
     const sourceUrl = !file && req.body.url ? linkSchema.parse(String(req.body.url).trim()) : null;
-    if (!file && !sourceUrl) throw new HttpError(400, "Cần file video/audio (trường media) hoặc link video (trường url)");
+    const rawTopic = !file && !sourceUrl ? req.body.topic : undefined;
+    const topic = rawTopic ? topicSchema.parse(typeof rawTopic === "string" ? JSON.parse(rawTopic) : rawTopic) : null;
+    if (!file && !sourceUrl && !topic) {
+      throw new HttpError(400, "Cần file video/audio (trường media), link video (trường url) hoặc chủ đề truyện (trường topic)");
+    }
     const ext = file ? extname(file.originalname).toLowerCase() : "";
     if (file && !MEDIA_EXT.has(ext)) throw new HttpError(400, `Định dạng ${ext || "không rõ"} không được hỗ trợ`);
 
@@ -231,14 +246,18 @@ app.post("/api/jobs", upload.single("media"), async (req, res) => {
     if (file) renameSync(file.path, join(jobDir(id), sourceFile));
 
     const now = new Date().toISOString();
-    const title = String(req.body.title ?? "").trim() || (file ? file.originalname.replace(/\.[^.]+$/, "") : sourceInfo!.title);
+    const givenTitle = String(req.body.title ?? "").trim();
+    const title = givenTitle || (file ? file.originalname.replace(/\.[^.]+$/, "") : sourceInfo?.title ?? topic!.prompt.split("\n")[0].slice(0, 80));
+    const sourceTopic = topic ? { ...topic, autoTitle: !givenTitle } : null;
     const job: Job = {
       id, title: title.slice(0, 200), sourceFile, sourceDurationSec: sourceInfo?.durationSec ?? null,
-      sourceUrl, sourceInfo, createdAt: now, updatedAt: now,
+      sourceUrl, sourceInfo, sourceTopic, createdAt: now, updatedAt: now,
       status: "queued", step: null, progress: 0, detail: null, timings: {}, error: null,
-      settings, reviewApproved: false, parts: [], log: [], callbackUrl,
+      settings, reviewApproved: false, parts: [], fullVideo: null, log: [], callbackUrl,
     };
-    appendLog(job, sourceUrl ? `Đã tạo job từ link ${sourceInfo!.platform}, đang chờ xử lý` : "Đã tạo job, đang chờ xử lý");
+    appendLog(job, sourceUrl ? `Đã tạo job từ link ${sourceInfo!.platform}, đang chờ xử lý`
+      : topic ? "Đã tạo job AI viết truyện theo chủ đề, đang chờ xử lý"
+      : "Đã tạo job, đang chờ xử lý");
     saveJob(job);
     enqueue(id);
     res.status(201).json(job);
@@ -317,6 +336,25 @@ app.delete("/api/jobs/:id", (req, res) => {
 const styleSchema = z.object({
   name: z.string().trim().min(1).max(100),
   prompt: z.string().trim().max(4000),
+});
+
+// ── Channel brand ───────────────────────────────────────────────────────────
+
+app.get("/api/brand", (_req, res) => {
+  res.json(getBrand());
+});
+
+app.put("/api/brand", (req, res) => {
+  const brand = z.object({
+    enabled: z.boolean(),
+    text: z.string().trim().max(60, "Tên kênh tối đa 60 ký tự"),
+    position: z.enum(["top-left", "top-right"]),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Màu không hợp lệ"),
+    subscribe: z.boolean().default(false),
+    subscribeAt: z.enum(["start", "end", "both"]).default("both"),
+  }).refine((b) => !b.enabled || b.text.length > 0, { message: "Nhập tên kênh trước khi bật" }).parse(req.body);
+  saveBrand(brand);
+  res.json(brand);
 });
 
 app.get("/api/styles", (_req, res) => {

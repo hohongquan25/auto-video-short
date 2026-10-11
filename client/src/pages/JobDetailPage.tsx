@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, CircleAlert, Link2, CircleCheck, ClipboardCheck, Columns2, Copy, Download, FileText, Hourglass, LoaderCircle,
-  PartyPopper, RotateCcw, Square, Trash2, Undo2,
+  PartyPopper, PenLine, RotateCcw, Square, Trash2, Undo2,
 } from "lucide-react";
 import { api, jobFileUrl, type Job, type JobDetail, type JobSettings, type Step } from "../api";
 import {
-  BackgroundPicker, PartLengthPicker, ReviewToggle, StylePicker, VoicePicker, estimateParts,
+  BackgroundPicker, FormatPicker, FullVideoToggle, PartLengthPicker, ReviewToggle, StylePicker, SubtitleToggle, VoicePicker, estimateParts,
 } from "../components/Pickers";
 import { Pipeline, STEP_ICONS, StatusBadge } from "../components/JobStatus";
 import { LogView } from "../components/LogView";
@@ -24,6 +24,7 @@ const TAB_FOR_STEP: Record<Step, Tab> = {
   download: "log",
   extract: "log",
   transcribe: "transcript",
+  write: "log",
   rewrite: "script",
   review: "script",
   tts: "log",
@@ -65,7 +66,8 @@ function StatusPanel({ job, now, busy, onRetry, onApprove, onTab }: {
           </div>
           <div className="sp-percent">{Math.round(job.progress * 100)}%</div>
         </div>
-        <div className="progress lg striped"><div style={{ width: `${Math.max(2, job.progress * 100)}%` }} /></div>
+        {/* Keyed by step so the bar starts fresh at 0% instead of sliding back from 100%. */}
+        <div key={job.step} className="progress lg striped"><div style={{ width: `${Math.max(2, job.progress * 100)}%` }} /></div>
         <div className="sp-detail">{job.detail ?? "Đang xử lý…"}</div>
         <div className="sp-stats small muted">
           {elapsed !== null && <span>Bước này: {formatSpan(elapsed)}</span>}
@@ -143,7 +145,9 @@ function StatusPanel({ job, now, busy, onRetry, onApprove, onTab }: {
       <div className="sp-head">
         <span className="sp-icon"><PartyPopper size={20} /></span>
         <div className="spacer">
-          <div className="sp-title">Hoàn thành {job.parts.length} video, tổng {formatDuration(total)}</div>
+          <div className="sp-title">
+            Hoàn thành {job.parts.length} video{job.fullVideo ? " + bản đầy đủ" : ""}, tổng {formatDuration(total)}
+          </div>
           {took > 0 && <div className="small muted">Thời gian xử lý {formatSpan(took)}</div>}
         </div>
         <button onClick={() => onTab("result")}>Xem video</button>
@@ -159,28 +163,35 @@ function ResultTab({ job }: { job: Job }) {
   if (job.parts.length === 0) {
     return <div className="empty">{isActive(job) ? "Video sẽ xuất hiện ở đây khi dựng xong." : "Chưa có video."}</div>;
   }
-  const copyPart = async (textFile: string, index: number) => {
+  const copyPart = async (textFile: string, what: string) => {
     const text = await fetch(jobFileUrl(job.id, `parts/${textFile}`)).then((r) => r.text()).catch(() => null);
     if (text === null) return toast("error", "Không tải được lời đọc");
-    await copyText(text, toast, `lời đọc phần ${index}`);
+    await copyText(text, toast, `lời đọc ${what}`);
   };
+  const videos = [
+    ...job.parts.map((p) => ({ ...p, label: `Phần ${p.index}/${job.parts.length}`, what: `phần ${p.index}`, download: `${job.title} - Phan ${p.index}.mp4` })),
+    ...(job.fullVideo ? [{ ...job.fullVideo, label: "Bản đầy đủ (không cắt)", what: "bản đầy đủ", download: `${job.title} - Day du.mp4` }] : []),
+  ];
   return (
     <div className="parts">
-      {job.parts.map((p) => (
-        <div className="part" key={p.file}>
-          <video src={jobFileUrl(job.id, `parts/${p.file}`)} controls preload="metadata" />
+      {videos.map((v) => (
+        <div className="part" key={v.file}>
+          <video
+            src={jobFileUrl(job.id, `parts/${v.file}`)} controls preload="metadata"
+            className={job.settings.format === "tiktok" ? "tall" : undefined}
+          />
           <div className="part-meta">
             <div>
-              <b>Phần {p.index}/{job.parts.length}</b>
+              <b>{v.label}</b>
               <div className="small muted">
-                {formatDuration(p.durationSec)}{p.sizeBytes ? ` · ${formatBytes(p.sizeBytes)}` : ""}
+                {formatDuration(v.durationSec)}{v.sizeBytes ? ` · ${formatBytes(v.sizeBytes)}` : ""}
               </div>
             </div>
             <span className="spacer" />
-            <button className="icon-btn" title="Sao chép lời đọc" aria-label="Sao chép lời đọc" onClick={() => copyPart(p.textFile, p.index)}>
+            <button className="icon-btn" title="Sao chép lời đọc" aria-label="Sao chép lời đọc" onClick={() => copyPart(v.textFile, v.what)}>
               <Copy size={15} />
             </button>
-            <a className="btn small primary" href={jobFileUrl(job.id, `parts/${p.file}`)} download={`${job.title} - Phan ${p.index}.mp4`}>
+            <a className="btn small primary" href={jobFileUrl(job.id, `parts/${v.file}`)} download={v.download}>
               <Download size={14} /> Tải về
             </a>
           </div>
@@ -196,7 +207,7 @@ function ScriptTab({ job, data, draft, setDraft, busy, onSave, onApprove }: {
 }) {
   const [compare, setCompare] = useState(false);
   if (data.script === null) {
-    return <div className="empty">Kịch bản sẽ có sau bước "{STEP_LABELS.rewrite}".</div>;
+    return <div className="empty">Kịch bản sẽ có sau bước "{STEP_LABELS[job.sourceTopic ? "write" : "rewrite"]}".</div>;
   }
   const text = draft ?? "";
   const dirty = draft !== null && draft !== data.script;
@@ -258,15 +269,15 @@ function SettingsTab({ job, busy, onApply, onRerunFrom }: {
   if (!meta) return <div className="loading"><LoaderCircle className="spin" /></div>;
 
   const set = (patch: Partial<JobSettings>) => setDraft((d) => ({ ...d, ...patch }));
-  const changeStep = stepForChange(job.settings, draft);
+  const changeStep = stepForChange(job, draft);
   const locked = isActive(job);
   const speechSec = job.parts.length ? job.parts.reduce((s, p) => s + p.durationSec, 0) : job.sourceDurationSec;
 
   return (
     <div className="settings-tab">
       <section>
-        <h3>Phong cách viết lại</h3>
-        <StylePicker value={draft} set={set} styles={styles} meta={meta} />
+        <h3>{job.sourceTopic ? "Phong cách kể" : "Phong cách viết lại"}</h3>
+        <StylePicker value={draft} set={set} styles={styles} meta={meta} writing={Boolean(job.sourceTopic)} />
         <ReviewToggle value={draft} set={set} />
       </section>
       <section>
@@ -276,10 +287,16 @@ function SettingsTab({ job, busy, onApply, onRerunFrom }: {
       <section>
         <h3>Video nền</h3>
         <BackgroundPicker value={draft} set={set} />
+        <SubtitleToggle value={draft} set={set} />
+      </section>
+      <section>
+        <h3>Định dạng xuất</h3>
+        <FormatPicker value={draft} set={set} />
       </section>
       <section>
         <h3>Độ dài mỗi video</h3>
         <PartLengthPicker value={draft} set={set} speechSec={speechSec} />
+        <FullVideoToggle value={draft} set={set} />
       </section>
 
       <div className={`apply-bar ${changeStep ? "pending" : ""}`}>
@@ -363,9 +380,9 @@ export function JobDetailPage() {
   }, "Đã duyệt, bắt đầu tạo giọng đọc");
 
   const tabs: [Tab, string, number | null][] = [
-    ["result", "Kết quả", job.parts.length || null],
+    ["result", "Kết quả", job.parts.length + (job.fullVideo ? 1 : 0) || null],
     ["script", "Kịch bản", null],
-    ["transcript", "Bản gốc", null],
+    ["transcript", job.sourceTopic ? "Chủ đề" : "Bản gốc", null],
     ["log", "Nhật ký", problems || null],
     ["settings", "Cài đặt", null],
   ];
@@ -385,8 +402,11 @@ export function JobDetailPage() {
                 <Link2 size={13} /> {job.sourceInfo?.platform ?? "Link"}{job.sourceInfo?.uploader ? ` · ${job.sourceInfo.uploader}` : ""}
               </a>
             )}
+            {job.sourceTopic && (
+              <span className="source-link"><PenLine size={13} /> AI viết · {job.sourceTopic.minMinutes}–{job.sourceTopic.maxMinutes} phút</span>
+            )}
             {job.sourceDurationSec ? <span>{job.sourceUrl ? "Dài" : "File gốc"} {formatDuration(job.sourceDurationSec)}</span> : null}
-            {style && <span>{style.name}{style.prompt ? ` · ${AI_PROVIDER_LABELS[job.settings.aiProvider]}` : ""}</span>}
+            {style && <span>{style.name}{style.prompt || job.sourceTopic ? ` · ${AI_PROVIDER_LABELS[job.settings.aiProvider]}` : ""}</span>}
             {voice && <span>{voice.name}{voice.provider === "vbee" ? " (Vbee)" : ""} {job.settings.rate}</span>}
           </div>
         </div>
@@ -441,7 +461,16 @@ export function JobDetailPage() {
         )}
 
         {currentTab === "transcript" && (
-          data.transcript === null ? (
+          job.sourceTopic ? (
+            <>
+              <div className="editor-toolbar small">
+                <span>Truyện dài <b>{job.sourceTopic.minMinutes}–{job.sourceTopic.maxMinutes} phút</b>, do AI viết theo chủ đề</span>
+                <span className="spacer" />
+                <button className="small" onClick={() => copyText(job.sourceTopic!.prompt, toast, "chủ đề")}><Copy size={14} /> Sao chép</button>
+              </div>
+              <div className="textblock">{job.sourceTopic.prompt}</div>
+            </>
+          ) : data.transcript === null ? (
             <div className="empty">Bản gốc sẽ có sau bước "{STEP_LABELS.transcribe}".</div>
           ) : (
             <>

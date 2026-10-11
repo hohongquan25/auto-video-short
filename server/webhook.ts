@@ -13,6 +13,11 @@ export function jobLinks(job: Job) {
       video: `${base}/files/jobs/${job.id}/parts/${p.file}`,
       text: `${base}/files/jobs/${job.id}/parts/${p.textFile}`,
     })),
+    full: job.fullVideo && {
+      durationSec: job.fullVideo.durationSec,
+      video: `${base}/files/jobs/${job.id}/parts/${job.fullVideo.file}`,
+      text: `${base}/files/jobs/${job.id}/parts/${job.fullVideo.textFile}`,
+    },
   };
 }
 
@@ -59,8 +64,10 @@ export async function notifyWebhooks(job: Job, log: (msg: string, level?: LogLev
       step: job.step,
       error: job.error,
       sourceUrl: job.sourceUrl,
+      sourceTopic: job.sourceTopic,
       settings: job.settings,
       parts: job.parts,
+      fullVideo: job.fullVideo,
     },
     links: jobLinks(job),
   });

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useLocation } from "react-router-dom";
-import { FileText, LoaderCircle, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
-import { api, backgroundUrl, type Background, type Style } from "../api";
+import { BadgeCheck, Bell, BellRing, FileText, Headphones, LoaderCircle, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import { api, backgroundUrl, type Background, type Brand, type Style } from "../api";
 import { FileDrop } from "../components/FileDrop";
 import { errorMessage, useToast } from "../components/Toast";
 import { formatDuration, stripExt } from "../format";
@@ -172,6 +172,142 @@ function StylesSection() {
   );
 }
 
+const BRAND_COLORS = [
+  { name: "Vàng hổ phách", hex: "#FFB020" },
+  { name: "Cam san hô", hex: "#FF6B4A" },
+  { name: "Hồng", hex: "#FF5C9A" },
+  { name: "Xanh ngọc", hex: "#19C3B1" },
+  { name: "Xanh dương", hex: "#3D9BFF" },
+];
+
+/** CSS copy of the badge drawn into the video (server/lib/badge.ts). */
+function BrandBadge({ text, color }: { text: string; color: string }) {
+  const words = text.split(/\s+/);
+  return (
+    <span className="brand-badge" style={{ "--brand": color } as CSSProperties}>
+      <span className="bb-icon"><Headphones size={9} strokeWidth={3} /></span>
+      <span className="bb-text">
+        {words.length > 1 ? <>{words.slice(0, -1).join(" ")} <span className="bb-accent">{words[words.length - 1]}</span></> : text}
+      </span>
+    </span>
+  );
+}
+
+function BrandSection() {
+  const toast = useToast();
+  const [saved, setSaved] = useState<Brand | null>(null);
+  const [draft, setDraft] = useState<Brand | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.brand().then((b) => {
+      setSaved(b);
+      setDraft(b);
+    }).catch((e) => toast("error", errorMessage(e)));
+  }, [toast]);
+
+  if (!draft || !saved) return null;
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const set = (patch: Partial<Brand>) => setDraft({ ...draft, ...patch });
+  const save = async () => {
+    setBusy(true);
+    try {
+      const b = await api.saveBrand({ ...draft, text: draft.text.trim() });
+      setSaved(b);
+      setDraft(b);
+      toast("success", "Đã lưu, áp dụng cho các video dựng từ giờ");
+    } catch (err) {
+      toast("error", errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card" id="brand">
+      <div className="section-head">
+        <div>
+          <h2>Nhận diện kênh trên video</h2>
+          <p className="small muted">
+            Tên kênh và hiệu ứng đăng ký được thêm vào mọi video khi dựng, đúng vị trí cho cả khung TikTok lẫn YouTube. Video nền trong thư viện không bị thay đổi.
+          </p>
+        </div>
+      </div>
+      <div className="brand-row">
+        <div className="spacer">
+          <label className={`switch-card ${draft.enabled ? "on" : ""}`}>
+            <BadgeCheck size={20} />
+            <span className="spacer">
+              <b>Hiện tên kênh trên video</b>
+              <span className="small muted block">Áp dụng cho các video dựng từ giờ trở đi.</span>
+            </span>
+            <input type="checkbox" className="switch" checked={draft.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+          </label>
+          <label className="field">
+            <span className="field-label">Tên kênh</span>
+            <input type="text" value={draft.text} maxLength={60} placeholder="Ví dụ: Gác trọ Audio" onChange={(e) => set({ text: e.target.value })} />
+          </label>
+          <div className="field-label">Vị trí</div>
+          <div className="seg-control">
+            <button type="button" className={draft.position === "top-left" ? "on" : ""} onClick={() => set({ position: "top-left" })}>
+              <b>Góc trên trái</b>
+            </button>
+            <button type="button" className={draft.position === "top-right" ? "on" : ""} onClick={() => set({ position: "top-right" })}>
+              <b>Góc trên phải</b>
+            </button>
+          </div>
+          <div className="field-label">Màu nhấn</div>
+          <div className="swatches">
+            {BRAND_COLORS.map((c) => (
+              <button
+                type="button" key={c.hex} title={c.name} aria-label={c.name} aria-pressed={draft.color === c.hex}
+                className={`swatch ${draft.color === c.hex ? "on" : ""}`} style={{ background: c.hex }}
+                onClick={() => set({ color: c.hex })}
+              />
+            ))}
+          </div>
+          <label className={`switch-card ${draft.subscribe ? "on" : ""}`}>
+            <BellRing size={20} />
+            <span className="spacer">
+              <b>Hiệu ứng đăng ký và chuông thông báo</b>
+              <span className="small muted block">
+                Nút bật lên, con trỏ bấm "Đăng ký" rồi bấm chuông cho chuông rung (khoảng 5 giây). Video dọc ghi "Theo dõi" như TikTok.
+              </span>
+            </span>
+            <input type="checkbox" className="switch" checked={draft.subscribe} onChange={(e) => set({ subscribe: e.target.checked })} />
+          </label>
+          {draft.subscribe && (
+            <>
+              <div className="field-label">Hiện vào lúc nào trong mỗi video</div>
+              <div className="seg-control">
+                {([["start", "Đầu video", "sau 2,5 giây"], ["end", "Cuối video", "6 giây trước khi hết"], ["both", "Cả hai", "đầu và cuối"]] as const).map(([id, label, hint]) => (
+                  <button type="button" key={id} className={draft.subscribeAt === id ? "on" : ""} onClick={() => set({ subscribeAt: id })}>
+                    <b>{label}</b><span>{hint}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          <div className="row">
+            <button className="primary" disabled={busy || !dirty || (draft.enabled && !draft.text.trim())} onClick={save}>Lưu</button>
+            {dirty && <button disabled={busy} onClick={() => setDraft(saved)}>Hoàn tác</button>}
+          </div>
+        </div>
+        <div className={`brand-preview ${draft.position}`} aria-hidden>
+          {draft.enabled && draft.text.trim() && <BrandBadge text={draft.text.trim()} color={draft.color} />}
+          {draft.subscribe && (
+            <span className="cta-mock">
+              <span className="cta-btn">THEO DÕI</span>
+              <span className="cta-bell" style={{ color: draft.color }}><Bell size={13} fill="currentColor" /></span>
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="small muted">Job đã xong muốn có tên kênh hay hiệu ứng thì vào tab Cài đặt của job, chọn chạy lại từ bước "Dựng video" (giọng đọc được dùng lại).</div>
+    </section>
+  );
+}
+
 export function LibraryPage() {
   const { hash } = useLocation();
   useEffect(() => {
@@ -183,9 +319,10 @@ export function LibraryPage() {
       <div className="page-head">
         <div>
           <h1>Thư viện</h1>
-          <p className="muted">Video nền và phong cách viết lại dùng chung cho mọi video.</p>
+          <p className="muted">Tên kênh, video nền và phong cách viết lại dùng chung cho mọi video.</p>
         </div>
       </div>
+      <BrandSection />
       <BackgroundsSection />
       <StylesSection />
     </>

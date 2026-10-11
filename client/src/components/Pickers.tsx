@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Bot, Check, ClipboardCheck, FileText, LoaderCircle, Pause, Play, RotateCcw, Sparkles, TriangleAlert, User, UserRound,
+  Bot, Captions, Check, ClipboardCheck, Crop, Droplet, Film, FileText, LoaderCircle, Monitor, Pause, Play, Proportions, RotateCcw,
+  Smartphone, Sparkles, TriangleAlert, User, UserRound, type LucideIcon,
 } from "lucide-react";
 import {
-  api, backgroundUrl, voicePreviewUrl, type AiProvider, type Background, type JobSettings, type Meta, type Style, type Voice,
+  api, backgroundUrl, voicePreviewUrl, type AiProvider, type Background, type FitMode, type JobSettings, type Meta, type Style,
+  type VideoFormat, type Voice,
 } from "../api";
-import { formatDuration, stripExt } from "../format";
+import { VIDEO_FORMATS, formatDuration, stripExt } from "../format";
 import { useLibrary } from "../useLibrary";
 import { FileDrop } from "./FileDrop";
 import { errorMessage, useToast } from "./Toast";
@@ -15,6 +17,10 @@ export const DEFAULT_SETTINGS: Omit<JobSettings, "styleId" | "backgroundId" | "a
   voice: "vi-VN-HoaiMyNeural",
   rate: "+0%",
   reviewBeforeTts: false,
+  subtitles: true,
+  fullVideo: true,
+  format: "original",
+  fit: "blur",
   minPartSec: 120,
   maxPartSec: 300,
 };
@@ -53,7 +59,9 @@ function ProviderFix({ meta, provider }: { meta: Meta; provider: AiProvider }) {
   );
 }
 
-export function ProviderPicker({ value, set, meta }: { value: JobSettings; set: Set; meta: Meta }) {
+export function ProviderPicker({ value, set, meta, label = "AI dùng để viết lại" }: {
+  value: JobSettings; set: Set; meta: Meta; label?: string;
+}) {
   const c = meta.system.claude;
   const options: { id: AiProvider; title: string; desc: string; status: string }[] = [
     {
@@ -69,7 +77,7 @@ export function ProviderPicker({ value, set, meta }: { value: JobSettings; set: 
   ];
   return (
     <>
-      <div className="field-label provider-label">AI dùng để viết lại</div>
+      <div className="field-label provider-label">{label}</div>
       <div className="choice-grid two">
         {options.map((o) => {
           const ready = providerReady(meta, o.id);
@@ -97,13 +105,16 @@ export function ProviderPicker({ value, set, meta }: { value: JobSettings; set: 
 
 // ── Style ───────────────────────────────────────────────────────────────────
 
-export function StylePicker({ value, set, styles, meta }: { value: JobSettings; set: Set; styles: Style[]; meta: Meta }) {
+/** `writing`: the AI writes the story from a topic, so every style uses AI and the verbatim one means "no set style". */
+export function StylePicker({ value, set, styles, meta, writing = false }: {
+  value: JobSettings; set: Set; styles: Style[]; meta: Meta; writing?: boolean;
+}) {
   const selected = styles.find((s) => s.id === value.styleId);
   return (
     <>
       <div className="choice-grid">
         {styles.map((s) => {
-          const ai = Boolean(s.prompt);
+          const ai = Boolean(s.prompt) || writing;
           return (
             <button
               type="button" key={s.id}
@@ -115,9 +126,11 @@ export function StylePicker({ value, set, styles, meta }: { value: JobSettings; 
                 <b>{s.name}</b>
                 {value.styleId === s.id && <Check size={16} className="choice-check" />}
               </div>
-              <div className="choice-body clamp-3">{s.prompt || "Không dùng AI: đọc lại đúng nội dung Whisper nhận dạng được."}</div>
+              <div className="choice-body clamp-3">{s.prompt || (writing
+                ? "Không đặt phong cách riêng: AI tự chọn giọng kể hợp với chủ đề."
+                : "Không dùng AI: đọc lại đúng nội dung Whisper nhận dạng được.")}</div>
               <div className="choice-foot">
-                {ai ? <span className="tag accent">AI viết lại</span> : <span className="tag">Không dùng AI</span>}
+                {ai ? <span className="tag accent">{writing ? "AI viết" : "AI viết lại"}</span> : <span className="tag">Không dùng AI</span>}
               </div>
             </button>
           );
@@ -126,7 +139,9 @@ export function StylePicker({ value, set, styles, meta }: { value: JobSettings; 
       <div className="small muted">
         Muốn thêm giọng văn riêng? <Link to="/library#styles">Quản lý phong cách</Link>
       </div>
-      {selected?.prompt && <ProviderPicker value={value} set={set} meta={meta} />}
+      {(selected?.prompt || writing) && (
+        <ProviderPicker value={value} set={set} meta={meta} label={writing ? "AI dùng để viết truyện" : undefined} />
+      )}
     </>
   );
 }
@@ -352,6 +367,91 @@ export function BackgroundPicker({ value, set }: { value: JobSettings; set: Set 
         )}
       </div>
       <div className="small muted">Video nền tự lặp lại cho đủ độ dài giọng đọc, âm thanh gốc của video nền được tắt.</div>
+    </>
+  );
+}
+
+export function SubtitleToggle({ value, set }: { value: JobSettings; set: Set }) {
+  return (
+    <label className={`switch-card ${value.subtitles ? "on" : ""}`}>
+      <Captions size={20} />
+      <span className="spacer">
+        <b>Chèn phụ đề vào video</b>
+        <span className="small muted block">Lời đọc hiện thành chữ ở cuối khung hình, chạy theo giọng đọc.</span>
+      </span>
+      <input type="checkbox" className="switch" checked={value.subtitles} onChange={(e) => set({ subtitles: e.target.checked })} />
+    </label>
+  );
+}
+
+export function FullVideoToggle({ value, set }: { value: JobSettings; set: Set }) {
+  return (
+    <label className={`switch-card ${value.fullVideo ? "on" : ""}`}>
+      <Film size={20} />
+      <span className="spacer">
+        <b>Thêm một video đầy đủ không cắt</b>
+        <span className="small muted block">Ngoài các phần đã chia, có thêm một video cả truyện ở cuối danh sách. Chỉ tạo khi có từ hai phần trở lên.</span>
+      </span>
+      <input type="checkbox" className="switch" checked={value.fullVideo} onChange={(e) => set({ fullVideo: e.target.checked })} />
+    </label>
+  );
+}
+
+// ── Output format ───────────────────────────────────────────────────────────
+
+const FORMAT_ICONS: Record<VideoFormat, LucideIcon> = { tiktok: Smartphone, youtube: Monitor, original: Proportions };
+const FIT_OPTIONS: { id: FitMode; label: string; desc: string; icon: LucideIcon }[] = [
+  { id: "blur", label: "Nền mờ", desc: "giữ trọn video nền, lấp chỗ trống bằng nền mờ", icon: Droplet },
+  { id: "crop", label: "Cắt cho đầy khung", desc: "phóng to, cắt bớt phần thừa", icon: Crop },
+];
+
+/** What the chosen background will look like in the output frame, built with CSS from the same clip. */
+function FramePreview({ src, format, fit }: { src: string; format: VideoFormat; fit: FitMode }) {
+  const size = VIDEO_FORMATS[format].size!;
+  return (
+    <div className={`frame-preview ${size.height > size.width ? "tall" : "wide"}`} style={{ aspectRatio: `${size.width} / ${size.height}` }}>
+      {fit === "blur" && <video className="fp-blur" src={src} muted loop autoPlay playsInline aria-hidden />}
+      <video className={fit === "blur" ? "fp-fit" : "fp-cover"} src={src} muted loop autoPlay playsInline aria-hidden />
+      <span className="fp-sub">Phụ đề nằm ở đây</span>
+    </div>
+  );
+}
+
+export function FormatPicker({ value, set }: { value: JobSettings; set: Set }) {
+  const { backgrounds } = useLibrary();
+  const bg = backgrounds.find((b) => b.id === value.backgroundId);
+  return (
+    <>
+      <div className="choice-grid">
+        {(["tiktok", "youtube", "original"] as const).map((f) => {
+          const Icon = FORMAT_ICONS[f];
+          return (
+            <button type="button" key={f} className={`choice ${value.format === f ? "selected" : ""}`} onClick={() => set({ format: f })}>
+              <div className="choice-head">
+                <Icon size={16} />
+                <b>{VIDEO_FORMATS[f].label}</b>
+                {value.format === f && <Check size={16} className="choice-check" />}
+              </div>
+              <div className="choice-body">{VIDEO_FORMATS[f].desc}</div>
+            </button>
+          );
+        })}
+      </div>
+      {value.format !== "original" && (
+        <div className="fit-row">
+          <div className="spacer">
+            <div className="field-label">Khi video nền khác khung hình</div>
+            <div className="seg-control fit-control">
+              {FIT_OPTIONS.map((o) => (
+                <button type="button" key={o.id} className={value.fit === o.id ? "on" : ""} onClick={() => set({ fit: o.id })}>
+                  <b><o.icon size={14} /> {o.label}</b><span>{o.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {bg && <FramePreview key={bg.id} src={backgroundUrl(bg.file)} format={value.format} fit={value.fit} />}
+        </div>
+      )}
     </>
   );
 }

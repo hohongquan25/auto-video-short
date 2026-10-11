@@ -2,7 +2,7 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, readdir
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { paths } from "./config.js";
-import type { Background, Job, Style } from "./types.js";
+import type { Background, Brand, Job, Style } from "./types.js";
 
 const ID_RE = /^[a-z0-9-]{4,64}$/;
 
@@ -82,9 +82,15 @@ function migrateJob(job: Job): Job {
   job.detail ??= null;
   job.sourceDurationSec ??= null;
   job.settings.aiProvider ??= "gemini";
+  job.settings.subtitles ??= false;
+  job.settings.fullVideo ??= false;
+  job.settings.format ??= "original";
+  job.settings.fit ??= "blur";
+  job.fullVideo ??= null;
   job.callbackUrl ??= null;
   job.sourceUrl ??= null;
   job.sourceInfo ??= null;
+  job.sourceTopic ??= null;
   return job;
 }
 
@@ -134,4 +140,16 @@ export function getBackground(id: string): Background | null {
 
 export function saveBackgrounds(items: Background[]): void {
   writeJson(paths.backgroundsFile, items);
+}
+
+// ── Channel brand ───────────────────────────────────────────────────────────
+
+const DEFAULT_BRAND: Brand = { enabled: false, text: "", position: "top-left", color: "#FFB020", subscribe: false, subscribeAt: "both" };
+
+export function getBrand(): Brand {
+  return { ...DEFAULT_BRAND, ...readJson<Partial<Brand>>(paths.brandFile, {}) };
+}
+
+export function saveBrand(brand: Brand): void {
+  writeJson(paths.brandFile, brand);
 }

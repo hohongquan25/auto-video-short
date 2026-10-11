@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import type { Job, JobSettings, Step } from "./api";
 
-export const STEPS: Step[] = ["download", "extract", "transcribe", "rewrite", "review", "tts", "render"];
+export const STEPS: Step[] = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render"];
+
+/** Steps that turn a recording into a script; a topic job's AI writes the script instead. */
+const MEDIA_STEPS: Step[] = ["download", "extract", "transcribe", "rewrite"];
 
 /** The steps shown for a job: "download" only exists for jobs created from a link. */
-export const jobSteps = (job: Job): Step[] => STEPS.filter((s) => s !== "download" || job.sourceUrl);
+export const jobSteps = (job: Job): Step[] => STEPS.filter((s) =>
+  job.sourceTopic ? !MEDIA_STEPS.includes(s) : s !== "write" && (s !== "download" || job.sourceUrl));
 
 export type StepState = "done" | "active" | "queued" | "waiting" | "error" | "skipped" | "pending";
 
@@ -46,12 +50,17 @@ export function totalProcessingSeconds(job: Job, now: number): number {
 }
 
 /** Earliest step whose output is invalidated by a settings change. */
-export function stepForChange(before: JobSettings, after: JobSettings): Step | null {
-  if (before.styleId !== after.styleId || before.aiProvider !== after.aiProvider) return "rewrite";
+export function stepForChange(job: Job, after: JobSettings): Step | null {
+  const before = job.settings;
+  if (before.styleId !== after.styleId || before.aiProvider !== after.aiProvider) return job.sourceTopic ? "write" : "rewrite";
   if (before.reviewBeforeTts !== after.reviewBeforeTts && after.reviewBeforeTts) return "review";
   if (before.voice !== after.voice || before.rate !== after.rate) return "tts";
   if (
     before.backgroundId !== after.backgroundId ||
+    before.subtitles !== after.subtitles ||
+    before.fullVideo !== after.fullVideo ||
+    before.format !== after.format ||
+    (after.format !== "original" && before.fit !== after.fit) ||
     before.minPartSec !== after.minPartSec ||
     before.maxPartSec !== after.maxPartSec
   ) return "render";

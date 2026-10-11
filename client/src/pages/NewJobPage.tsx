@@ -1,22 +1,23 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, ArrowRight, Check, CircleAlert, Clapperboard, FileAudio, FileVideo, Link2, LoaderCircle, Mic, Rocket, Sparkles,
+  ArrowLeft, ArrowRight, Check, CircleAlert, Clapperboard, FileAudio, FileVideo, Link2, LoaderCircle, Mic, PenLine, Rocket, Sparkles,
   Upload, X,
 } from "lucide-react";
 import { api, type JobSettings } from "../api";
 import {
-  BackgroundPicker, DEFAULT_SETTINGS, PartLengthPicker, ReviewToggle, StylePicker, VoicePicker, defaultProvider, defaultVoice,
+  BackgroundPicker, DEFAULT_SETTINGS, FormatPicker, FullVideoToggle, PartLengthPicker, ReviewToggle, StylePicker, SubtitleToggle, VoicePicker, defaultProvider, defaultVoice,
   estimateParts, providerReady,
 } from "../components/Pickers";
 import { FileDrop } from "../components/FileDrop";
 import { LinkSource, useLinkProbe } from "../components/LinkSource";
+import { DEFAULT_TOPIC, TopicSource, topicProblem } from "../components/TopicSource";
 import { errorMessage, useToast } from "../components/Toast";
-import { AI_PROVIDER_LABELS, formatBytes, formatDuration, stripExt } from "../format";
+import { AI_PROVIDER_LABELS, VIDEO_FORMATS, formatBytes, formatDuration, stripExt } from "../format";
 import { useLibrary } from "../useLibrary";
 
 const WIZARD = [
-  { key: "source", label: "File truyện", icon: FileAudio },
+  { key: "source", label: "Nguồn truyện", icon: FileAudio },
   { key: "script", label: "Kịch bản", icon: Sparkles },
   { key: "voice", label: "Giọng đọc", icon: Mic },
   { key: "video", label: "Video", icon: Clapperboard },
@@ -50,7 +51,8 @@ export function NewJobPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { meta, styles, backgrounds, error: loadError } = useLibrary();
-  const [mode, setMode] = useState<"file" | "link">("file");
+  const [mode, setMode] = useState<"file" | "link" | "topic">("file");
+  const [topic, setTopic] = useState(DEFAULT_TOPIC);
   const [file, setFile] = useState<File | null>(null);
   const [link, setLink] = useState("");
   const probe = useLinkProbe(mode === "link" ? link : "");
@@ -83,9 +85,10 @@ export function NewJobPage() {
 
   const set = (patch: Partial<JobSettings>) => setSettings((s) => (s ? { ...s, ...patch } : s));
   const rateFactor = 1 + (parseInt(settings.rate, 10) || 0) / 100;
-  const sourceSec = mode === "file" ? media.duration : probe.info?.durationSec ?? null;
-  const hasSource = mode === "file" ? Boolean(file) : probe.status === "ok";
-  const speechSec = sourceSec ? sourceSec / rateFactor : null;
+  const sourceSec = mode === "file" ? media.duration : mode === "link" ? probe.info?.durationSec ?? null : null;
+  const hasSource = mode === "file" ? Boolean(file) : mode === "link" ? probe.status === "ok" : !topicProblem(topic);
+  // A written story is sized in narration minutes already, at whatever voice speed is chosen.
+  const speechSec = mode === "topic" ? ((topic.minMinutes + topic.maxMinutes) / 2) * 60 : sourceSec ? sourceSec / rateFactor : null;
   const style = styles.find((s) => s.id === settings.styleId);
   const voice = meta.voices.find((v) => v.id === settings.voice);
   const background = backgrounds.find((b) => b.id === settings.backgroundId);
@@ -93,11 +96,19 @@ export function NewJobPage() {
   // Warnings are shown but do not stop the job from being created.
   const problems: { step: number; text: string; warning?: boolean }[] = [];
   if (!hasSource) {
-    problems.push({ step: 0, text: mode === "file" ? "Chưa chọn file truyện" : probe.status === "loading" ? "Đang kiểm tra link…" : "Chưa có link video hợp lệ" });
+    problems.push({
+      step: 0,
+      text: mode === "file" ? "Chưa chọn file truyện"
+        : mode === "topic" ? topicProblem(topic)!
+        : probe.status === "loading" ? "Đang kiểm tra link…" : "Chưa có link video hợp lệ",
+    });
   }
-  if (style?.prompt && !providerReady(meta, settings.aiProvider)) {
+  if ((style?.prompt || mode === "topic") && !providerReady(meta, settings.aiProvider)) {
     const text = settings.aiProvider === "claude" ? "Claude Code chưa đăng nhập" : "Chưa có GEMINI_API_KEY";
-    problems.push({ step: 1, text: `${text}, bước AI viết lại sẽ lỗi`, warning: true });
+    // A topic job cannot do anything without the AI; a rewrite job would at least fail at a clear step.
+    problems.push(mode === "topic"
+      ? { step: 1, text: `${text}, AI không thể viết truyện` }
+      : { step: 1, text: `${text}, bước AI viết lại sẽ lỗi`, warning: true });
   }
   if (!background) problems.push({ step: 3, text: "Chưa chọn video nền" });
   if (settings.maxPartSec <= settings.minPartSec) problems.push({ step: 3, text: "Độ dài mỗi phần không hợp lệ" });
@@ -119,8 +130,8 @@ export function NewJobPage() {
     if (!hasSource || blocking.length) return;
     setUploading(0);
     try {
-      const job = mode === "file" && file
-        ? await api.createJob(file, title, settings, setUploading)
+      const job = mode === "file" && file ? await api.createJob(file, title, settings, setUploading)
+        : mode === "topic" ? await api.createJobFromTopic({ ...topic, prompt: topic.prompt.trim() }, title, settings)
         : await api.createJobFromUrl(probe.url, title, settings);
       toast("success", "Đã tạo job, bắt đầu xử lý");
       navigate(`/jobs/${job.id}`);
@@ -135,17 +146,23 @@ export function NewJobPage() {
       step: 0, label: "Nguồn",
       value: mode === "file"
         ? file ? `${file.name}${media.duration ? ` · ${formatDuration(media.duration)}` : ""}` : "Chưa chọn"
+        : mode === "topic"
+        ? topic.prompt.trim() ? `AI viết ${topic.minMinutes}–${topic.maxMinutes} phút: ${topic.prompt.trim().slice(0, 80)}${topic.prompt.trim().length > 80 ? "…" : ""}` : "Chưa nhập chủ đề"
         : probe.info ? `${probe.info.platform}: ${probe.info.title}${probe.info.durationSec ? ` · ${formatDuration(probe.info.durationSec)}` : ""}` : "Chưa có link",
     },
     {
       step: 1, label: "Phong cách",
-      value: `${style?.name ?? "?"}${style?.prompt ? ` · ${AI_PROVIDER_LABELS[settings.aiProvider]}` : ""}${settings.reviewBeforeTts ? " · có duyệt" : ""}`,
+      value: `${style?.name ?? "?"}${style?.prompt || mode === "topic" ? ` · ${AI_PROVIDER_LABELS[settings.aiProvider]}` : ""}${settings.reviewBeforeTts ? " · có duyệt" : ""}`,
     },
     { step: 2, label: "Giọng đọc", value: `${voice?.name ?? settings.voice}${voice?.provider === "vbee" ? " (Vbee)" : ""} · ${settings.rate}` },
-    { step: 3, label: "Video nền", value: background?.name ?? "Chưa chọn" },
+    { step: 3, label: "Video nền", value: `${background?.name ?? "Chưa chọn"}${settings.subtitles ? " · có phụ đề" : ""}` },
+    {
+      step: 3, label: "Định dạng",
+      value: `${VIDEO_FORMATS[settings.format].label}${settings.format !== "original" ? ` · ${settings.fit === "blur" ? "nền mờ" : "cắt đầy khung"}` : ""}`,
+    },
     {
       step: 3, label: "Mỗi video",
-      value: `${settings.minPartSec / 60}–${settings.maxPartSec / 60} phút${speechSec ? ` · ≈ ${estimateParts(speechSec, settings.minPartSec, settings.maxPartSec)} video` : ""}`,
+      value: `${settings.minPartSec / 60}–${settings.maxPartSec / 60} phút${speechSec ? ` · ≈ ${estimateParts(speechSec, settings.minPartSec, settings.maxPartSec)} video` : ""}${settings.fullVideo ? " · thêm bản đầy đủ" : ""}`,
     },
   ];
 
@@ -178,7 +195,11 @@ export function NewJobPage() {
           {step === 0 && (
             <section>
               <h2>Truyện lấy từ đâu?</h2>
-              <p className="muted small">Giọng nói sẽ được nhận dạng thành chữ bằng Whisper ({meta.whisperModel}) chạy ngay trên máy bạn.</p>
+              <p className="muted small">
+                {mode === "topic"
+                  ? "AI sẽ tự viết một truyện mới theo chủ đề bạn đưa ra, rồi đọc và dựng thành video."
+                  : <>Giọng nói sẽ được nhận dạng thành chữ bằng Whisper ({meta.whisperModel}) chạy ngay trên máy bạn.</>}
+              </p>
               <div className="seg-control source-mode">
                 <button type="button" className={mode === "file" ? "on" : ""} onClick={() => setMode("file")}>
                   <b><Upload size={15} /> Tải file lên</b><span>video hoặc audio trên máy</span>
@@ -186,8 +207,13 @@ export function NewJobPage() {
                 <button type="button" className={mode === "link" ? "on" : ""} onClick={() => setMode("link")}>
                   <b><Link2 size={15} /> Dán link video</b><span>YouTube, TikTok, Facebook…</span>
                 </button>
+                <button type="button" className={mode === "topic" ? "on" : ""} onClick={() => setMode("topic")}>
+                  <b><PenLine size={15} /> AI tự viết truyện</b><span>theo chủ đề bạn đưa ra</span>
+                </button>
               </div>
-              {mode === "link" ? (
+              {mode === "topic" ? (
+                <TopicSource value={topic} set={setTopic} rate={settings.rate} />
+              ) : mode === "link" ? (
                 <LinkSource link={link} setLink={setLink} probe={probe} ytdlpOk={meta.system.ytdlp.ok} />
               ) : !file ? (
                 <FileDrop
@@ -215,7 +241,9 @@ export function NewJobPage() {
                 <span className="field-label">Tên truyện</span>
                 <input
                   type="text" value={title} onChange={(e) => setTitle(e.target.value)}
-                  placeholder={mode === "file" ? "Tự lấy theo tên file nếu bỏ trống" : "Tự lấy theo tiêu đề video nếu bỏ trống"}
+                  placeholder={mode === "file" ? "Tự lấy theo tên file nếu bỏ trống"
+                    : mode === "topic" ? "AI tự đặt tên truyện nếu bỏ trống"
+                    : "Tự lấy theo tiêu đề video nếu bỏ trống"}
                 />
               </label>
             </section>
@@ -223,9 +251,18 @@ export function NewJobPage() {
 
           {step === 1 && (
             <section>
-              <h2>Bạn muốn kể lại câu chuyện theo giọng văn nào?</h2>
-              <p className="muted small">AI giữ nguyên tình tiết và nhân vật, chỉ đổi cách kể. Chọn "Giữ nguyên văn" để không dùng AI.</p>
-              <StylePicker value={settings} set={set} styles={styles} meta={meta} />
+              {mode === "topic" ? (
+                <>
+                  <h2>AI nên kể câu chuyện theo giọng văn nào?</h2>
+                  <p className="muted small">Phong cách quyết định không khí và cách kể của truyện AI viết ra.</p>
+                </>
+              ) : (
+                <>
+                  <h2>Bạn muốn kể lại câu chuyện theo giọng văn nào?</h2>
+                  <p className="muted small">AI giữ nguyên tình tiết và nhân vật, chỉ đổi cách kể. Chọn "Giữ nguyên văn" để không dùng AI.</p>
+                </>
+              )}
+              <StylePicker value={settings} set={set} styles={styles} meta={meta} writing={mode === "topic"} />
               <ReviewToggle value={settings} set={set} />
             </section>
           )}
@@ -243,8 +280,12 @@ export function NewJobPage() {
               <h2>Video nền và độ dài mỗi video</h2>
               <h3>Video nền</h3>
               <BackgroundPicker value={settings} set={set} />
+              <SubtitleToggle value={settings} set={set} />
+              <h3>Định dạng xuất</h3>
+              <FormatPicker value={settings} set={set} />
               <h3>Độ dài mỗi video</h3>
               <PartLengthPicker value={settings} set={set} speechSec={speechSec} />
+              <FullVideoToggle value={settings} set={set} />
             </section>
           )}
 
@@ -268,7 +309,9 @@ export function NewJobPage() {
                 </div>
               ))}
               <div className="info-box small">
-                Quy trình: tách audio → nhận dạng giọng nói → {style?.prompt ? `${AI_PROVIDER_LABELS[settings.aiProvider]} viết lại` : "giữ nguyên văn"}
+                Quy trình: {mode === "topic"
+                  ? `${AI_PROVIDER_LABELS[settings.aiProvider]} lập dàn ý và viết từng chương`
+                  : <>tách audio → nhận dạng giọng nói → {style?.prompt ? `${AI_PROVIDER_LABELS[settings.aiProvider]} viết lại` : "giữ nguyên văn"}</>}
                 {settings.reviewBeforeTts ? " → dừng chờ bạn duyệt" : ""} → tạo giọng đọc → dựng video.
                 Bạn có thể đóng trang này, job vẫn tiếp tục chạy.
               </div>
