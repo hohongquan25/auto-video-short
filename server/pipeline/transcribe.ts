@@ -7,18 +7,30 @@ type WhisperEvent =
   | { event: "loading"; model: string }
   | { event: "loaded"; seconds: number }
   | { event: "info"; language: string; probability: number; duration: number; duration_after_vad: number }
+  | { event: "batch"; start: number; end: number; speech: number }
   | { event: "done"; segments: number; chars: number }
   | { event?: undefined; progress: number; t?: number; text?: string };
+
+/**
+ * Seconds of speech decoded per wall-clock second in the last run, used to
+ * pace the progress bar through the first batch. Starts from what batched
+ * large-v3-turbo did on an i5-13400F.
+ */
+let lastSpeechRate = 1.5;
 
 export async function transcribe(audioWav: string, outTxt: string, r: StepReporter): Promise<void> {
   let totalSec = 0;
   let startedAt = 0;
   let nextMilestone = 0.2;
+  /** Speech in finished batches and when the first batch started, to measure this run's rate. */
+  let batchSpeech = 0;
+  let batchesStartedAt = 0;
+  let currentBatchSpeech = 0;
 
   const onEvent = (msg: WhisperEvent) => {
     switch (msg.event) {
       case "loading":
-        r.log(`Nạp model Whisper "${msg.model}" (lần đầu sẽ tải model về, có thể mất vài phút)`);
+        r.log(`Nạp model Whisper "${msg.model}", batch ${config.whisperBatchSize}, beam ${config.whisperBeamSize} (lần đầu sẽ tải model về, có thể mất vài phút)`);
         r.detail(`Đang nạp model ${msg.model}…`);
         return;
       case "loaded":
@@ -34,7 +46,19 @@ export async function transcribe(audioWav: string, outTxt: string, r: StepReport
         r.log(`Audio dài ${formatDuration(msg.duration)}${speech} · ngôn ngữ "${msg.language}" (${Math.round(msg.probability * 100)}%)`);
         return;
       }
+      case "batch": {
+        if (!totalSec) return;
+        const now = Date.now();
+        if (batchesStartedAt) batchSpeech += currentBatchSpeech;
+        else batchesStartedAt = now;
+        if (batchSpeech > 0) lastSpeechRate = batchSpeech / ((now - batchesStartedAt) / 1000);
+        currentBatchSpeech = msg.speech;
+        r.expect(msg.end / totalSec, msg.speech / lastSpeechRate);
+        r.detail(`Đang nhận dạng ${formatDuration(msg.start)}–${formatDuration(msg.end)} / ${formatDuration(totalSec)}…`);
+        return;
+      }
       case "done":
+        if (batchesStartedAt) lastSpeechRate = (batchSpeech + currentBatchSpeech) / ((Date.now() - batchesStartedAt) / 1000);
         r.progress(1);
         r.detail(null);
         return;
@@ -56,7 +80,10 @@ export async function transcribe(audioWav: string, outTxt: string, r: StepReport
 
   await run(
     config.whisperPython,
-    [config.whisperScript, audioWav, outTxt, config.whisperModel, config.whisperLanguage],
+    [
+      config.whisperScript, audioWav, outTxt, config.whisperModel, config.whisperLanguage,
+      config.whisperBeamSize, config.whisperBatchSize, config.whisperThreads,
+    ],
     {
       signal: r.signal,
       onStdoutLine: (line) => {

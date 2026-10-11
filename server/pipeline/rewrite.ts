@@ -26,7 +26,7 @@ function buildPrompt(chunk: string, previousTail: string): string {
   return `${context}Viết lại đoạn sau:\n<doan_goc>\n${chunk}\n</doan_goc>`;
 }
 
-async function withRetry<T>(
+export async function withRetry<T>(
   fn: () => Promise<T>,
   signal: AbortSignal,
   onRetry: (err: unknown, attempt: number, total: number, delayMs: number) => void,
@@ -43,9 +43,9 @@ async function withRetry<T>(
   }
 }
 
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err)).split("\n")[0].slice(0, 200);
+export const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err)).split("\n")[0].slice(0, 200);
 
-interface Writer {
+export interface Writer {
   /** Shown in the log, e.g. "Claude (sonnet)". */
   name: string;
   write: (prompt: string) => Promise<string>;
@@ -78,6 +78,9 @@ function claudeWriter(systemInstruction: string, signal: AbortSignal): Writer {
   };
 }
 
+export const makeWriter = (provider: AiProvider, systemInstruction: string, signal: AbortSignal): Writer =>
+  provider === "claude" ? claudeWriter(systemInstruction, signal) : geminiWriter(systemInstruction, signal);
+
 /**
  * Rewrite the transcript chunk by chunk. Each finished chunk is cached on
  * disk, so a failed or interrupted run resumes where it stopped.
@@ -99,11 +102,14 @@ export async function rewriteScript(opts: {
   }
 
   const systemInstruction = `Bạn là biên tập viên truyện audio tiếng Việt. Nhiệm vụ: viết lại đoạn truyện theo phong cách sau.\n\nPhong cách: ${stylePrompt}\n\n${RULES}`;
-  const writer = provider === "claude" ? claudeWriter(systemInstruction, signal) : geminiWriter(systemInstruction, signal);
+  const writer = makeWriter(provider, systemInstruction, signal);
   r.log(`Bản gốc ${formatChars(transcript.length)} ký tự, chia thành ${chunks.length} đoạn để gửi ${writer.name}`);
 
   mkdirSync(workDir, { recursive: true });
   const results: string[] = [];
+  /** Characters rewritten per second so far; the first guess is Claude Sonnet's pace. */
+  let written = 0;
+  let writingSec = 0;
   for (let i = 0; i < chunks.length; i++) {
     const label = `Đoạn ${i + 1}/${chunks.length}`;
     const cacheFile = join(workDir, `chunk-${String(i + 1).padStart(3, "0")}.txt`);
@@ -113,6 +119,8 @@ export async function rewriteScript(opts: {
     } else {
       r.detail(`${label}: đang chờ ${writer.name} viết lại ${formatChars(chunks[i].length)} ký tự…`);
       const started = Date.now();
+      const charsPerSec = writingSec > 0 ? written / writingSec : 150;
+      r.expect((i + 1) / chunks.length, chunks[i].length / charsPerSec);
       const previousTail = results.length ? results[results.length - 1].slice(-CONTEXT_CHARS) : "";
       const text = await withRetry(
         () => writer.write(buildPrompt(chunks[i], previousTail)),
@@ -124,6 +132,8 @@ export async function rewriteScript(opts: {
       );
       writeFileSync(cacheFile, text);
       results.push(text);
+      written += chunks[i].length;
+      writingSec += (Date.now() - started) / 1000;
       const diff = Math.round((text.length / chunks[i].length - 1) * 100);
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       r.log(

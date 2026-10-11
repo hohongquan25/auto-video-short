@@ -38,10 +38,10 @@ Trong n8n, tạo credential **Header Auth** với Name `Authorization` và Value
 
 ```json
 {"styleId":"ke-chuyen-cuon-hut","aiProvider":"claude","voice":"vi-VN-HoaiMyNeural","rate":"+0%",
- "backgroundId":"<id video nền>","reviewBeforeTts":false,"minPartSec":120,"maxPartSec":300}
+ "backgroundId":"<id video nền>","reviewBeforeTts":false,"subtitles":true,"fullVideo":true,"format":"tiktok","fit":"blur","minPartSec":120,"maxPartSec":300}
 ```
 
-Lấy `styleId` từ `GET /api/styles` và `backgroundId` từ `GET /api/backgrounds`. Giọng đọc: `vi-VN-HoaiMyNeural` (nữ) hoặc `vi-VN-NamMinhNeural` (nam). `aiProvider` là `claude` hoặc `gemini`.
+Lấy `styleId` từ `GET /api/styles` và `backgroundId` từ `GET /api/backgrounds`. Giọng đọc: `vi-VN-HoaiMyNeural` (nữ) hoặc `vi-VN-NamMinhNeural` (nam). `aiProvider` là `claude` hoặc `gemini`. `format` là `tiktok` (dọc 1080×1920), `youtube` (ngang 1920×1080) hoặc `original` (giữ khung video nền, mặc định); `fit` là `blur` (nền mờ, mặc định) hoặc `crop` (cắt cho đầy khung).
 
 **Tạo job từ link video** (YouTube, TikTok, Facebook…) thay vì tải file: gửi Body **JSON**, Story Studio tự tải phần âm thanh về:
 
@@ -51,11 +51,25 @@ Lấy `styleId` từ `GET /api/styles` và `backgroundId` từ `GET /api/backgro
   "title": "",
   "callbackUrl": "{{ $execution.resumeUrl }}",
   "settings": { "styleId": "ke-chuyen-cuon-hut", "aiProvider": "claude", "voice": "vbee:hn_female_ngochuyen_full_48k-fhg",
-                "rate": "+0%", "backgroundId": "<id>", "reviewBeforeTts": false, "minPartSec": 120, "maxPartSec": 300 }
+                "rate": "+0%", "backgroundId": "<id>", "reviewBeforeTts": false, "subtitles": true, "fullVideo": true, "format": "tiktok", "fit": "blur", "minPartSec": 120, "maxPartSec": 300 }
 }
 ```
 
 `title` để trống thì tự lấy tiêu đề video. Link sai, video riêng tư hoặc trang đòi đăng nhập sẽ bị từ chối ngay (HTTP 400, kèm lý do). Muốn kiểm tra link trước khi tạo job thì gọi `POST /api/sources/probe` với `{"url": "..."}`.
+
+**Để AI tự viết truyện theo chủ đề**: gửi Body **JSON** có `topic` thay cho `url`. AI lập dàn ý theo chương rồi viết từng chương. `minMinutes`–`maxMinutes` là độ dài giọng đọc mong muốn (3–120 phút):
+
+```json
+{
+  "topic": { "prompt": "Truyện ma làng quê miền Tây, một cô giáo trẻ về dạy ở ngôi trường cũ bên sông…", "minMinutes": 30, "maxMinutes": 45 },
+  "title": "",
+  "callbackUrl": "{{ $execution.resumeUrl }}",
+  "settings": { "styleId": "ke-chuyen-cuon-hut", "aiProvider": "claude", "voice": "vi-VN-HoaiMyNeural",
+                "rate": "+0%", "backgroundId": "<id>", "reviewBeforeTts": false, "subtitles": true, "fullVideo": true, "format": "tiktok", "fit": "blur", "minPartSec": 120, "maxPartSec": 300 }
+}
+```
+
+`title` để trống thì dùng tên truyện do AI đặt.
 
 **Chờ.** Wait node, Resume = **On Webhook Call**, HTTP Method = POST. Story Studio gọi `callbackUrl` khi job xong, lỗi hoặc chờ duyệt, và workflow chạy tiếp với dữ liệu:
 

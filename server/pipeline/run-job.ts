@@ -2,13 +2,15 @@ import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync }
 import { join } from "node:path";
 import { extractAudio, probeDuration } from "../lib/ffmpeg.js";
 import { downloadAudio } from "../lib/ytdlp.js";
+import { creepProgress } from "../lib/progress.js";
 import { estimateSpeechSec, formatBytes, formatChars, formatDuration } from "../lib/format.js";
-import { getBackground, getStyle, jobDir, saveJob } from "../store.js";
+import { getBackground, getBrand, getStyle, jobDir, saveJob } from "../store.js";
 import { listVbeeVoices } from "../lib/vbee.js";
-import { AI_PROVIDER_LABELS, EDGE_VOICES, STEPS, VBEE_PREFIX, voiceProvider, type Job, type LogLevel, type Step } from "../types.js";
+import { AI_PROVIDER_LABELS, EDGE_VOICES, STEPS, VIDEO_FORMATS, VBEE_PREFIX, voiceProvider, type Job, type LogLevel, type Step } from "../types.js";
 import { paths } from "../config.js";
 import { transcribe } from "./transcribe.js";
 import { rewriteScript } from "./rewrite.js";
+import { writeStory } from "./write.js";
 import { synthesizeScript } from "./tts.js";
 import { renderParts } from "./render.js";
 
@@ -20,6 +22,7 @@ export const artifacts = (id: string) => {
     dir,
     audio: join(dir, "audio.wav"),
     transcript: join(dir, "transcript.txt"),
+    storyDir: join(dir, "story"),
     rewriteDir: join(dir, "rewrite"),
     script: join(dir, "script.txt"),
     ttsDir: join(dir, "tts"),
@@ -39,6 +42,7 @@ export function resetFromStep(job: Job, fromStep: Step): void {
   }
   if (at("extract")) rmSync(a.audio, { force: true });
   if (at("transcribe")) rmSync(a.transcript, { force: true });
+  if (at("write")) rmSync(a.storyDir, { recursive: true, force: true });
   if (at("rewrite")) {
     rmSync(a.rewriteDir, { recursive: true, force: true });
     rmSync(a.script, { force: true });
@@ -48,6 +52,7 @@ export function resetFromStep(job: Job, fromStep: Step): void {
   if (at("render")) {
     rmSync(a.partsDir, { recursive: true, force: true });
     job.parts = [];
+    job.fullVideo = null;
   }
   for (const s of STEPS) if (at(s)) delete job.timings[s];
 }
@@ -67,6 +72,11 @@ export function endStep(job: Job): void {
 /** What a pipeline step uses to report back to the job. */
 export interface StepReporter {
   progress(fraction: number): void;
+  /**
+   * For work that reports only when a large piece finishes: move the bar
+   * smoothly toward `target` over about `etaSec` until the next progress().
+   */
+  expect(target: number, etaSec: number): void;
   /** Live one-liner shown under the progress bar; not kept in the log. */
   detail(text: string | null): void;
   log(msg: string, level?: LogLevel): void;
@@ -81,6 +91,22 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
   const a = artifacts(job.id);
   let lastSaved = 0;
 
+  let creep: { from: number; target: number; etaSec: number; startedAt: number } | null = null;
+  let creepTimer: NodeJS.Timeout | null = null;
+  const tick = () => {
+    // Stops itself once real progress takes over or the job stops running.
+    if (!creep || signal.aborted || job.status !== "running") {
+      if (creepTimer) clearInterval(creepTimer);
+      creepTimer = null;
+      return;
+    }
+    const p = creepProgress(creep.from, creep.target, (Date.now() - creep.startedAt) / 1000, creep.etaSec);
+    if (p > job.progress) {
+      job.progress = p;
+      save();
+    }
+  };
+
   const save = (force = false) => {
     if (!force && Date.now() - lastSaved < 1000) return;
     lastSaved = Date.now();
@@ -92,8 +118,14 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
   };
   const r: StepReporter = {
     progress: (fraction) => {
-      job.progress = Math.max(0, Math.min(1, fraction));
+      creep = null;
+      // Never backwards within a step: a real report can land just below where the bar crept to.
+      job.progress = Math.max(job.progress, Math.min(1, fraction));
       save(fraction >= 1);
+    },
+    expect: (target, etaSec) => {
+      creep = { from: job.progress, target: Math.min(1, target), etaSec, startedAt: Date.now() };
+      creepTimer ??= setInterval(tick, 500);
     },
     detail: (text) => {
       job.detail = text;
@@ -106,6 +138,7 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
     signal,
   };
   const enter = (step: Step, message: string) => {
+    creep = null;
     endStep(job);
     job.step = step;
     job.progress = 0;
@@ -131,12 +164,36 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
       const speed = p.speedBps ? ` · ${formatBytes(p.speedBps)}/s` : "";
       const eta = p.etaSec !== null ? ` · còn ${formatDuration(p.etaSec)}` : "";
       r.detail(`Đã tải ${formatBytes(p.downloadedBytes)}${p.fraction !== null ? ` (${Math.round(p.fraction * 100)}%)` : ""}${speed}${eta}`);
-    }, signal);
+    }, signal, (err, attempt, total, delayMs) => {
+      r.log(`Tải lỗi "${err.message.split("\n")[0].slice(0, 200)}", thử lại lần ${attempt}/${total} sau ${delayMs / 1000}s`, "warn");
+      r.detail(`Chờ ${delayMs / 1000}s rồi thử lại…`);
+    });
     r.log(`Tải xong: ${job.sourceFile} (${formatBytes(statSync(join(a.dir, job.sourceFile)).size)}, mất ${stepElapsed("download")})`, "success");
   }
 
+  // ── AI writes the story (jobs created from a topic) ───────────────────────
+  if (job.sourceTopic && !existsSync(a.script)) {
+    const topic = job.sourceTopic;
+    const style = getStyle(job.settings.styleId);
+    if (!style) throw new Error(`Không tìm thấy phong cách "${job.settings.styleId}"`);
+    enter("write", `Bắt đầu viết truyện ${topic.minMinutes}–${topic.maxMinutes} phút bằng ${AI_PROVIDER_LABELS[job.settings.aiProvider]}` +
+      (style.prompt ? `, phong cách "${style.name}"` : ""));
+    const story = await writeStory({
+      topic,
+      stylePrompt: style.prompt,
+      provider: job.settings.aiProvider,
+      rate: job.settings.rate,
+      workDir: a.storyDir,
+      r,
+    });
+    writeFileSync(a.script, story.script);
+    if (topic.autoTitle) job.title = story.title.slice(0, 200);
+    const speech = estimateSpeechSec(story.script.length, job.settings.rate);
+    r.log(`Viết xong "${story.title}": ${formatChars(story.script.length)} ký tự, ước tính ${formatDuration(speech)} giọng đọc (mất ${stepElapsed("write")})`, "success");
+  }
+
   // ── 1. Extract ──────────────────────────────────────────────────────────
-  if (!existsSync(a.audio)) {
+  if (!job.sourceTopic && !existsSync(a.audio)) {
     enter("extract", "Bắt đầu tách audio từ file gốc");
     const source = join(a.dir, job.sourceFile);
     const sourceSec = await probeDuration(source).catch(() => null);
@@ -150,14 +207,14 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
   }
 
   // ── 2. Transcribe ───────────────────────────────────────────────────────
-  if (!existsSync(a.transcript)) {
+  if (!job.sourceTopic && !existsSync(a.transcript)) {
     enter("transcribe", "Bắt đầu nhận dạng giọng nói (Whisper)");
     await transcribe(a.audio, a.transcript, r);
     const chars = readFileSync(a.transcript, "utf8").length;
     r.log(`Nhận dạng xong: ${formatChars(chars)} ký tự (mất ${stepElapsed("transcribe")})`, "success");
   }
 
-  // ── 3. Rewrite ──────────────────────────────────────────────────────────
+  // ── 3. Rewrite (a topic job's script was written above) ─────────────────
   if (!existsSync(a.script)) {
     const style = getStyle(job.settings.styleId);
     if (!style) throw new Error(`Không tìm thấy phong cách "${job.settings.styleId}"`);
@@ -207,21 +264,31 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
   // ── 6. Render ───────────────────────────────────────────────────────────
   const background = getBackground(job.settings.backgroundId);
   if (!background) throw new Error("Video nền đã bị xoá, hãy chọn video nền khác rồi chạy lại");
-  enter("render", `Bắt đầu dựng video trên nền "${background.name}"`);
-  job.parts = await renderParts({
+  const format = job.settings.format === "original" ? "" : `, khung ${VIDEO_FORMATS[job.settings.format].label} (${job.settings.fit === "blur" ? "nền mờ" : "cắt cho đầy khung"})`;
+  const brand = getBrand();
+  const stamp = (brand.enabled && brand.text ? `, tên kênh "${brand.text}"` : "") + (brand.subscribe ? ", hiệu ứng đăng ký" : "");
+  enter("render", `Bắt đầu dựng video trên nền "${background.name}"${format}${job.settings.subtitles ? ", có phụ đề" : ""}${stamp}`);
+  const rendered = await renderParts({
     segments,
     backgroundFile: join(paths.backgrounds, background.file),
     minPartSec: job.settings.minPartSec,
     maxPartSec: job.settings.maxPartSec,
+    subtitles: job.settings.subtitles,
+    fullVideo: job.settings.fullVideo,
+    format: job.settings.format,
+    fit: job.settings.fit,
+    brand,
     workDir: a.partsDir,
     r,
   });
+  job.parts = rendered.parts;
+  job.fullVideo = rendered.full;
 
   endStep(job);
   job.status = "done";
   job.step = null;
   job.progress = 1;
   const totalSec = job.parts.reduce((s, p) => s + p.durationSec, 0);
-  appendLog(job, `Hoàn thành: ${job.parts.length} video, tổng ${formatDuration(totalSec)}`, "success");
+  appendLog(job, `Hoàn thành: ${job.parts.length} video${job.fullVideo ? " + 1 video đầy đủ" : ""}, tổng ${formatDuration(totalSec)}`, "success");
   save(true);
 }

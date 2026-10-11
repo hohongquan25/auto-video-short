@@ -1,8 +1,12 @@
 import type {
-  AiProvider, Background, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus, Voice,
+  AiProvider, Background, Brand, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
+  VideoFormat, Voice,
 } from "../../server/types";
 
-export type { AiProvider, Background, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus, Voice };
+export type {
+  AiProvider, Background, Brand, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
+  VideoFormat, Voice,
+};
 
 export interface Meta {
   voices: Voice[];
@@ -63,6 +67,8 @@ export const api = {
   },
   createJobFromUrl: (url: string, title: string, settings: JobSettings) =>
     request<Job>("POST", "/api/jobs", { url, title, settings }),
+  createJobFromTopic: (topic: { prompt: string; minMinutes: number; maxMinutes: number }, title: string, settings: JobSettings) =>
+    request<Job>("POST", "/api/jobs", { topic, title, settings }),
   probeSource: (url: string) => request<SourceInfo>("POST", "/api/sources/probe", { url }),
   saveScript: (id: string, script: string) => request<Job>("PUT", `/api/jobs/${id}/script`, { script }),
   continueJob: (id: string) => request<Job>("POST", `/api/jobs/${id}/continue`),
@@ -70,6 +76,9 @@ export const api = {
     request<Job>("POST", `/api/jobs/${id}/rerun`, { fromStep, settings }),
   stop: (id: string) => request<Job>("POST", `/api/jobs/${id}/stop`),
   deleteJob: (id: string) => request<void>("DELETE", `/api/jobs/${id}`),
+
+  brand: () => request<Brand>("GET", "/api/brand"),
+  saveBrand: (brand: Brand) => request<Brand>("PUT", "/api/brand", brand),
 
   styles: () => request<Style[]>("GET", "/api/styles"),
   createStyle: (name: string, prompt: string) => request<Style>("POST", "/api/styles", { name, prompt }),

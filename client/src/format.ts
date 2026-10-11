@@ -1,7 +1,7 @@
 import type { JobStatus } from "../../server/types";
 
-export { AI_PROVIDER_LABELS, STEP_LABELS } from "../../server/types";
-export { estimateSpeechSec, formatBytes, formatChars, formatDuration } from "../../server/lib/format";
+export { AI_PROVIDER_LABELS, STEP_LABELS, VIDEO_FORMATS } from "../../server/types";
+export { TTS_CHARS_PER_SEC, estimateSpeechSec, formatBytes, formatChars, formatDuration } from "../../server/lib/format";
 
 export const STATUS_LABELS: Record<JobStatus, string> = {
   queued: "Đang chờ",

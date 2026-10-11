@@ -599,7 +599,8 @@ video.file-preview { max-height: 280px; background: #000; }
 .voice-scroll { max-height: 340px; overflow-y: auto; padding: 2px; }
 .tag.credit { margin-left: 6px; font-size: 10.5px; padding: 0 6px; }
 .source-link { display: inline-flex; align-items: center; gap: 4px; }
-.source-mode { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 16px; }
+.source-mode { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 16px; }
+@media (max-width: 640px) { .source-mode { grid-template-columns: 1fr; } }
 .source-mode b { display: inline-flex; align-items: center; gap: 6px; }
 .link-input {
   display: flex; align-items: center; gap: 8px; padding: 0 6px 0 12px; margin-bottom: 10px;
@@ -611,3 +612,67 @@ video.file-preview { max-height: 280px; background: #000; }
 .link-card { margin-bottom: 10px; flex-wrap: nowrap; }
 .link-thumb { width: 140px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; flex-shrink: 0; background: #000; }
 @media (max-width: 560px) { .link-thumb { width: 96px; } }
+
+/* Output format */
+.fit-row { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 14px; }
+.fit-control { grid-template-columns: 1fr; }
+.fit-control b { display: inline-flex; align-items: center; gap: 6px; }
+.frame-preview {
+  position: relative; flex-shrink: 0; overflow: hidden; border-radius: 10px;
+  background: #000; border: 1px solid var(--border-strong);
+}
+.frame-preview.tall { width: 128px; }
+.frame-preview.wide { width: 240px; }
+.frame-preview video { position: absolute; inset: 0; width: 100%; height: 100%; }
+.frame-preview .fp-blur { object-fit: cover; filter: blur(8px); transform: scale(1.15); }
+.frame-preview .fp-fit { object-fit: contain; }
+.frame-preview .fp-cover { object-fit: cover; }
+.frame-preview .fp-sub {
+  position: absolute; left: 8%; right: 8%; text-align: center;
+  font-size: 9px; font-weight: 700; color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000;
+}
+.frame-preview.tall .fp-sub { bottom: 22%; }
+.frame-preview.wide .fp-sub { bottom: 7%; }
+@media (max-width: 640px) { .fit-row { flex-direction: column; } }
+.part video.tall { aspect-ratio: 9 / 16; }
+
+/* Channel brand */
+.brand-row { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 10px; }
+.brand-row .switch-card { margin-bottom: 12px; }
+.brand-preview {
+  position: relative; flex-shrink: 0; width: 150px; aspect-ratio: 9 / 16; border-radius: 12px;
+  background: linear-gradient(160deg, var(--surface-3), var(--accent-soft)); border: 1px solid var(--border-strong);
+}
+.brand-badge {
+  position: absolute; top: 8.5%; max-width: 88%; display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px 2px 2px; border-radius: 999px; border: 1px solid var(--brand);
+  background: rgba(22, 22, 22, 0.82); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  color: #fff; font: 700 9.5px/1.2 Arial, sans-serif; white-space: nowrap;
+}
+.bb-icon {
+  flex-shrink: 0; width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--brand); color: #161616;
+}
+.bb-text { overflow: hidden; text-overflow: ellipsis; }
+.bb-accent { color: var(--brand); }
+.swatches { display: flex; gap: 8px; margin-bottom: 14px; }
+.swatch {
+  width: 28px; height: 28px; padding: 0; border-radius: 50%; border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.swatch.on { box-shadow: 0 0 0 2px var(--text); }
+.brand-preview.top-left .brand-badge { left: 6%; }
+.brand-preview.top-right .brand-badge { right: 6%; }
+@media (max-width: 640px) { .brand-row { flex-direction: column; } .brand-preview { width: 120px; } }
+.cta-mock { position: absolute; top: 60%; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 4px; }
+.cta-btn {
+  padding: 3px 9px; border-radius: 999px; background: #fe2c55; color: #fff;
+  font: 700 8.5px/1.2 Arial, sans-serif; white-space: nowrap; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.cta-bell { display: grid; place-items: center; animation: cta-ring 2.4s ease-in-out infinite; transform-origin: 50% 10%; }
+@keyframes cta-ring {
+  0%, 55%, 100% { transform: rotate(0); }
+  60% { transform: rotate(18deg); } 66% { transform: rotate(-15deg); } 72% { transform: rotate(10deg); }
+  78% { transform: rotate(-6deg); } 84% { transform: rotate(3deg); }
+}
+@media (prefers-reduced-motion: reduce) { .cta-bell { animation: none; } }

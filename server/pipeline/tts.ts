@@ -107,6 +107,17 @@ export async function synthesizeScript(opts: {
   let next = 0;
   let failed = false;
   let nextMilestone = 0.25;
+  // A segment takes tens of seconds and reports only when done, so pace the bar
+  // between them: Edge TTS read about 22 characters per second in testing.
+  const startedAt = Date.now();
+  let synthesized = 0;
+  const avgChars = chunks.reduce((s, c) => s + c.length, 0) / chunks.length;
+  const expectNext = () => {
+    if (done >= chunks.length) return;
+    const secPerSegment = synthesized > 0 ? (Date.now() - startedAt) / 1000 / synthesized : avgChars / 22 / concurrency;
+    r.expect((done + 1) / chunks.length, secPerSegment);
+  };
+  expectNext();
 
   const worker = async () => {
     while (next < chunks.length && !failed) {
@@ -120,6 +131,7 @@ export async function synthesizeScript(opts: {
         r.detail(`${label}: "${preview}"`);
         try {
           await synthesize(chunks[i], voice, rate, files[i], r, label);
+          synthesized++;
         } catch (err) {
           failed = true; // stop the other workers from starting new segments
           throw err;
@@ -129,6 +141,7 @@ export async function synthesizeScript(opts: {
       done++;
       const fraction = done / chunks.length;
       r.progress(fraction);
+      expectNext();
       if (fraction >= nextMilestone && fraction < 1) {
         const sec = durations.reduce((s, d) => s + (d ?? 0), 0);
         r.log(`Đã đọc ${done}/${chunks.length} đoạn (${formatDuration(sec)} audio)`);
