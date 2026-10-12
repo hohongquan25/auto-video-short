@@ -597,7 +597,6 @@ video.file-preview { max-height: 280px; background: #000; }
 .voice-group-head { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; margin: 6px 0 10px; }
 .voice-group-head .chips { margin-left: auto; }
 .voice-scroll { max-height: 340px; overflow-y: auto; padding: 2px; }
-.tag.credit { margin-left: 6px; font-size: 10.5px; padding: 0 6px; }
 .source-link { display: inline-flex; align-items: center; gap: 4px; }
 .source-mode { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 16px; }
 @media (max-width: 640px) { .source-mode { grid-template-columns: 1fr; } }

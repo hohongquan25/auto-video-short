@@ -52,13 +52,13 @@ export const config = {
   geminiModel: env("GEMINI_MODEL") ?? "gemini-flash-latest",
   claudePath: env("CLAUDE_PATH") ?? findClaude(),
   claudeModel: env("CLAUDE_MODEL") ?? "sonnet",
-  vbeeAppId: env("VBEE_APP_ID"),
-  vbeeToken: env("VBEE_TOKEN"),
-  /**
-   * Vbee's async API requires a webhook, but results are fetched by polling,
-   * so it only needs to be a well-formed URL unless this server is public.
-   */
-  vbeeWebhookUrl: env("VBEE_WEBHOOK_URL") ?? "https://example.invalid/story-studio/vbee-callback",
+  /** Same Python as Whisper: `pnpm setup:whisper` installs what python/olvroc needs too. */
+  olvrocPython: env("WHISPER_PYTHON") ?? (existsSync(venvPython) ? venvPython : "python"),
+  /** Model files (~650 MB, kept out of git), downloaded by `pnpm setup:olvroc`. */
+  olvrocModelDir: join(root, "models", "olvroc"),
+  olvrocScript: join(root, "python", "olvroc_tts.py"),
+  /** fp32 = best quality; int8 = ~1.6x faster on CPUs with VNNI, garbled audio on older ones. */
+  olvrocPrecision: checkedEnv("OLVROC_PRECISION", /^(fp32|int8)$/, "fp32") ?? "fp32",
   whisperModel: env("WHISPER_MODEL") ?? "large-v3-turbo",
   whisperLanguage: env("WHISPER_LANGUAGE") ?? "vi",
   /**

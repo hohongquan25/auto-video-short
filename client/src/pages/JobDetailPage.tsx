@@ -407,7 +407,7 @@ export function JobDetailPage() {
             )}
             {job.sourceDurationSec ? <span>{job.sourceUrl ? "Dài" : "File gốc"} {formatDuration(job.sourceDurationSec)}</span> : null}
             {style && <span>{style.name}{style.prompt || job.sourceTopic ? ` · ${AI_PROVIDER_LABELS[job.settings.aiProvider]}` : ""}</span>}
-            {voice && <span>{voice.name}{voice.provider === "vbee" ? " (Vbee)" : ""} {job.settings.rate}</span>}
+            {voice && <span>{voice.name}{voice.provider === "olvroc" ? " (OlvRoc)" : ""} {job.settings.rate}</span>}
           </div>
         </div>
         <div className="row">

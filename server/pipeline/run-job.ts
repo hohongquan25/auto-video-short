@@ -5,8 +5,10 @@ import { downloadAudio } from "../lib/ytdlp.js";
 import { creepProgress } from "../lib/progress.js";
 import { estimateSpeechSec, formatBytes, formatChars, formatDuration } from "../lib/format.js";
 import { getBackground, getBrand, getStyle, jobDir, saveJob } from "../store.js";
-import { listVbeeVoices } from "../lib/vbee.js";
-import { AI_PROVIDER_LABELS, EDGE_VOICES, STEPS, VIDEO_FORMATS, VBEE_PREFIX, voiceProvider, type Job, type LogLevel, type Step } from "../types.js";
+import { listOlvrocVoices } from "../lib/olvroc.js";
+import {
+  AI_PROVIDER_LABELS, EDGE_VOICES, STEPS, TTS_PROVIDER_LABELS, VIDEO_FORMATS, voiceProvider, type Job, type LogLevel, type Step,
+} from "../types.js";
 import { paths } from "../config.js";
 import { transcribe } from "./transcribe.js";
 import { rewriteScript } from "./rewrite.js";
@@ -247,9 +249,10 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
 
   // ── 5. TTS ──────────────────────────────────────────────────────────────
   const voiceId = job.settings.voice;
-  const knownVoices = voiceProvider(voiceId) === "vbee" ? await listVbeeVoices().catch(() => []) : EDGE_VOICES;
-  const voiceName = knownVoices.find((v) => v.id === voiceId)?.name ?? voiceId.replace(VBEE_PREFIX, "");
-  enter("tts", `Bắt đầu đọc kịch bản: giọng ${voiceName} (${voiceProvider(voiceId) === "vbee" ? "Vbee" : "Edge TTS"}), tốc độ ${job.settings.rate}`);
+  const provider = voiceProvider(voiceId);
+  const knownVoices = provider === "olvroc" ? await listOlvrocVoices().catch(() => []) : EDGE_VOICES;
+  const voiceName = knownVoices.find((v) => v.id === voiceId)?.name ?? voiceId.replace(/^olvroc:/, "");
+  enter("tts", `Bắt đầu đọc kịch bản: giọng ${voiceName} (${TTS_PROVIDER_LABELS[provider]}), tốc độ ${job.settings.rate}`);
   const segments = await synthesizeScript({
     script: readFileSync(a.script, "utf8"),
     voice: job.settings.voice,

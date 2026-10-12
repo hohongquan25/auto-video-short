@@ -1,0 +1,6 @@
+# Pinned: the versions the OlvRoc voices were checked with. sea-g2p turns text into
+# phonemes, so a new version can change how words are read. Change on purpose only.
+onnxruntime==1.31.0
+numpy==2.4.6
+tokenizers==0.23.3
+sea-g2p==0.10.0

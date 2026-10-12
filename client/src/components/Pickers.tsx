@@ -161,28 +161,7 @@ export function ReviewToggle({ value, set }: { value: JobSettings; set: Set }) {
 
 // ── Voice ───────────────────────────────────────────────────────────────────
 
-/** Vbee names look like "HN - Ngọc Huyền": split off the accent region. */
-function splitVoiceName(name: string): { name: string; region: string | null } {
-  const m = /^(HN|SG|HUE|Huế|DN)\s*-\s*(.+)$/i.exec(name);
-  if (!m) return { name, region: null };
-  const region = { HN: "Giọng Bắc", SG: "Giọng Nam", HUE: "Giọng Huế", "HUẾ": "Giọng Huế", DN: "Giọng Trung" }[m[1].toUpperCase()] ?? m[1];
-  return { name: m[2], region };
-}
-
 type GenderFilter = "all" | "female" | "male";
-
-/** "hn_female_ngochuyen_full_48k-fhg" → "48 kHz"; tells apart Vbee voices sharing a name. */
-const sampleRate = (id: string) => {
-  const m = /_(\d{2})k[-_]/.exec(id);
-  return m ? `${m[1]} kHz` : null;
-};
-
-/** A Vbee voice when Vbee is connected (Ngọc Huyền if available), else the default Edge voice. */
-export function defaultVoice(meta: Meta): string {
-  const vbee = meta.voices.filter((v) => v.provider === "vbee");
-  if (!meta.system.vbee.ok || vbee.length === 0) return DEFAULT_SETTINGS.voice;
-  return (vbee.find((v) => v.id.includes("ngochuyen")) ?? vbee.find((v) => v.gender === "female") ?? vbee[0]).id;
-}
 
 export function VoicePicker({ value, set, meta, speechSec }: { value: JobSettings; set: Set; meta: Meta; speechSec?: number | null }) {
   const audio = useRef<HTMLAudioElement | null>(null);
@@ -190,18 +169,17 @@ export function VoicePicker({ value, set, meta, speechSec }: { value: JobSetting
   const [gender, setGender] = useState<GenderFilter>("all");
   const toast = useToast();
   const rateNum = parseInt(value.rate, 10) || 0;
-  const vbeeVoices = meta.voices.filter((v) => v.provider === "vbee");
+  const olvrocVoices = meta.voices.filter((v) => v.provider === "olvroc");
   const edgeVoices = meta.voices.filter((v) => v.provider === "edge");
-  const vbee = meta.system.vbee;
+  const olvroc = meta.system.olvroc;
 
   useEffect(() => () => audio.current?.pause(), []);
 
   const preview = (v: Voice) => {
     audio.current?.pause();
     if (playing?.voice === v.id) return setPlaying(null);
-    // Vbee: the provider's own demo clip (free). Edge: synthesized by our server at the chosen speed.
-    const url = v.provider === "vbee" ? v.demoUrl : voicePreviewUrl(v.id, value.rate);
-    if (!url) return toast("error", "Giọng này không có mẫu nghe thử");
+    // Synthesized by our server at the chosen speed.
+    const url = voicePreviewUrl(v.id, value.rate);
     const el = new Audio(url);
     audio.current = el;
     setPlaying({ voice: v.id, loading: true });
@@ -209,7 +187,6 @@ export function VoicePicker({ value, set, meta, speechSec }: { value: JobSetting
     el.onended = () => setPlaying(null);
     el.onerror = async () => {
       setPlaying(null);
-      if (v.provider === "vbee") return toast("error", "Không phát được mẫu giọng của Vbee");
       // The <audio> element hides the server's message, so fetch it for the toast.
       const res = await fetch(url).catch(() => null);
       const data = res ? await res.json().catch(() => null) : null;
@@ -219,7 +196,6 @@ export function VoicePicker({ value, set, meta, speechSec }: { value: JobSetting
   };
 
   const card = (v: Voice) => {
-    const { name, region } = splitVoiceName(v.name);
     const isPlaying = playing?.voice === v.id;
     const genderText = v.gender === "male" ? "Nam" : v.gender === "female" ? "Nữ" : null;
     return (
@@ -231,14 +207,13 @@ export function VoicePicker({ value, set, meta, speechSec }: { value: JobSetting
       >
         <span className="avatar">{v.gender === "male" ? <User size={22} /> : <UserRound size={22} />}</span>
         <span className="spacer">
-          <b>{name}</b>
+          <b>{v.name}</b>
           <span className="small muted block">
-            {[genderText, region, sampleRate(v.id)].filter(Boolean).join(" · ") || "Tiếng Việt"}
-            {v.creditFactor && v.creditFactor > 1 && <span className="tag warn credit">×{v.creditFactor} credit</span>}
+            {v.detail ?? genderText ?? "Tiếng Việt"}
           </span>
         </span>
         <button
-          type="button" className="round-btn" aria-label={`Nghe thử giọng ${name}`}
+          type="button" className="round-btn" aria-label={`Nghe thử giọng ${v.name}`}
           onClick={(e) => {
             e.stopPropagation();
             preview(v);
@@ -250,34 +225,39 @@ export function VoicePicker({ value, set, meta, speechSec }: { value: JobSetting
     );
   };
 
-  const shownVbee = vbeeVoices.filter((v) => gender === "all" || v.gender === gender);
+  const shown = (voices: Voice[]) => voices.filter((v) => gender === "all" || v.gender === gender);
+
+  const genderChips = () => (
+    <div className="chips">
+      {(["all", "female", "male"] as const).map((g) => (
+        <button
+          key={g} type="button" className={`chip ${gender === g ? "on" : ""}`}
+          onClick={() => setGender(g)}
+        >
+          {{ all: "Tất cả", female: "Nữ", male: "Nam" }[g]}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <>
       <div className="voice-group-head">
-        <b>Vbee</b>
+        <b>OlvRoc</b>
         <span className="small muted">
-          {vbee.ok ? `${vbeeVoices.length} giọng · tính phí theo ký tự · nghe thử bằng mẫu của Vbee` : "Giọng đọc tiếng Việt trả phí"}
+          {olvroc.ok
+            ? `${olvrocVoices.length} giọng · miễn phí · chạy trên máy này, nghe thử lần đầu phải chờ nạp model`
+            : "Giọng đọc tiếng Việt miễn phí, chạy trên máy"}
         </span>
-        {vbee.ok && vbeeVoices.length > 6 && (
-          <div className="chips">
-            {(["all", "female", "male"] as const).map((g) => (
-              <button key={g} type="button" className={`chip ${gender === g ? "on" : ""}`} onClick={() => setGender(g)}>
-                {{ all: "Tất cả", female: "Nữ", male: "Nam" }[g]}
-              </button>
-            ))}
-          </div>
-        )}
+        {olvroc.ok && olvrocVoices.length > 6 && genderChips()}
       </div>
-      {vbee.ok ? (
-        <div className="choice-grid two voice-scroll">{shownVbee.map(card)}</div>
+      {olvroc.ok ? (
+        <div className="choice-grid two voice-scroll">{shown(olvrocVoices).map(card)}</div>
       ) : (
         <div className="alert warn">
           <TriangleAlert size={16} />
           <div>
-            {vbee.configured
-              ? <>Không kết nối được Vbee: {vbee.error}</>
-              : <>{vbee.error}. Lấy App ID và Token trong Vbee Studio, điền vào <code>.env.local</code> rồi khởi động lại server.</>}
+            Chưa dùng được OlvRoc: {olvroc.error}. Chạy <code>pnpm setup:whisper</code> và <code>pnpm setup:olvroc</code>, rồi bấm ↻ ở mục Hệ thống.
           </div>
         </div>
       )}

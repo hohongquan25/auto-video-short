@@ -16,10 +16,10 @@ import { synthesizeToFile } from "./pipeline/tts.js";
 import { ffmpegVersion, hasVideoStream, probeDuration } from "./lib/ffmpeg.js";
 import { run } from "./lib/proc.js";
 import { claudeStatus } from "./lib/claude.js";
-import { listVbeeVoices, vbeeConfigured, vbeeStatus } from "./lib/vbee.js";
+import { listOlvrocVoices, olvrocStatus, olvrocSynthesize } from "./lib/olvroc.js";
 import { probeUrl, ytdlpVersion } from "./lib/ytdlp.js";
 import {
-  EDGE_VOICES, STEPS, STEP_LABELS, voiceProvider, type Background, type Job, type SystemStatus, type Voice,
+  EDGE_VOICES, STEPS, STEP_LABELS, OLVROC_PREFIX, voiceProvider, type Background, type Job, type SystemStatus, type Voice,
 } from "./types.js";
 
 ensureDataDirs();
@@ -81,14 +81,14 @@ async function checkSystem(): Promise<SystemStatus> {
       .catch((err: unknown) => ({ ok: false, python: config.whisperPython, error: errorLine(err) })),
     claudeStatus(),
   ]);
-  const vbee = await vbeeStatus();
+  const olvroc = await olvrocStatus(true);
   const ytdlpVer = await ytdlpVersion().catch(() => null);
   return {
     ffmpeg,
     whisper,
     gemini: { ok: Boolean(config.geminiApiKey), model: config.geminiModel },
     claude: { ok: claude.loggedIn, ...claude, model: config.claudeModel },
-    vbee,
+    olvroc,
     ytdlp: {
       ok: ytdlpVer !== null,
       version: ytdlpVer,
@@ -100,42 +100,54 @@ async function checkSystem(): Promise<SystemStatus> {
 /** Checked once per server start (spawning Python takes a second or two). */
 let systemStatus: Promise<SystemStatus> | null = null;
 
-/** Edge voices plus, when configured and reachable, Vbee's voice list. */
+/** Edge voices plus, when installed, OlvRoc's voice list. */
 async function allVoices(): Promise<Voice[]> {
-  const vbee = await listVbeeVoices().catch(() => []);
-  return [...vbee, ...EDGE_VOICES];
+  const olvroc = await listOlvrocVoices().catch(() => []);
+  return [...olvroc, ...EDGE_VOICES];
 }
 
 app.get("/api/meta", async (req, res) => {
   if (!systemStatus || req.query.recheck) systemStatus = checkSystem();
+  // The system check re-reads OlvRoc's voices, so list them after it.
+  const system = await systemStatus;
   res.json({
     voices: await allVoices(),
     steps: STEPS,
     geminiConfigured: Boolean(config.geminiApiKey),
     geminiModel: config.geminiModel,
     whisperModel: config.whisperModel,
-    system: await systemStatus,
+    system,
   });
 });
 
 const PREVIEW_TEXT = "Xin chào, đây là giọng đọc thử. Đêm hôm ấy, trời mưa tầm tã, và câu chuyện của chúng ta bắt đầu từ một ngôi nhà nhỏ cuối làng.";
 const rateSchema = z.string().regex(/^[+-]\d{1,3}%$/, "Tốc độ đọc không hợp lệ");
 
+/** OlvRoc voice ids hold the preset name: Vietnamese letters, spaces, apostrophes… */
+const olvrocVoiceId = new RegExp(`^${OLVROC_PREFIX}[^\\x00-\\x1f/\\\\]{1,64}$`);
+
 app.get("/api/voices/preview", async (req, res) => {
   const { voice, rate } = z.object({
-    // Vbee voices are previewed from their own demo clips, which cost no credits.
-    voice: z.enum(EDGE_VOICES.map((v) => v.id) as [string, ...string[]]),
+    voice: z.string().refine((id) => EDGE_VOICES.some((v) => v.id === id) || olvrocVoiceId.test(id), "Giọng đọc không hợp lệ"),
     rate: rateSchema,
   }).parse(req.query);
-  const file = join(paths.previews, `${voice}_${rate.replace("%", "")}.mp3`);
+  const olvroc = voiceProvider(voice) === "olvroc";
+  if (olvroc && !(await listOlvrocVoices().catch(() => [])).some((v) => v.id === voice)) {
+    throw new HttpError(400, "Không có giọng OlvRoc này");
+  }
+  // ASCII only: OlvRoc ids hold ":", which Windows file names cannot, and Vietnamese
+  // letters, which Node 24's fs.rmSync silently fails to delete on Windows.
+  const fileSafe = voice.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").replace(/[^\w-]+/g, "_");
+  const file = join(paths.previews, `${fileSafe}_${rate.replace("%", "")}.mp3`);
   if (!existsSync(file)) {
     const tmp = `${file}.${process.pid}.tmp`;
     try {
-      await synthesizeToFile(PREVIEW_TEXT, voice, rate, tmp);
+      if (olvroc) await olvrocSynthesize(PREVIEW_TEXT, voice, rate, tmp, AbortSignal.timeout(10 * 60_000));
+      else await synthesizeToFile(PREVIEW_TEXT, voice, rate, tmp);
       renameSync(tmp, file);
     } catch (err) {
       rmSync(tmp, { force: true });
-      throw new HttpError(502, `Không tạo được giọng thử (cần kết nối mạng): ${errorLine(err)}`);
+      throw new HttpError(502, `Không tạo được giọng thử${olvroc ? "" : " (cần kết nối mạng)"}: ${errorLine(err)}`);
     }
   }
   res.type("audio/mpeg").sendFile(file);
@@ -147,7 +159,7 @@ const settingsSchema = z.object({
   styleId: z.string().min(1),
   aiProvider: z.enum(["claude", "gemini"]).default("claude"),
   voice: z.string().refine(
-    (id) => EDGE_VOICES.some((v) => v.id === id) || /^vbee:[\w.-]+$/.test(id),
+    (id) => EDGE_VOICES.some((v) => v.id === id) || olvrocVoiceId.test(id),
     "Giọng đọc không hợp lệ",
   ),
   rate: rateSchema,
@@ -174,9 +186,14 @@ function assertIdle(job: Job): void {
 function validateSettingsRefs(s: z.infer<typeof settingsSchema>): void {
   if (!getStyle(s.styleId)) throw new HttpError(400, "Phong cách không tồn tại");
   if (!getBackground(s.backgroundId)) throw new HttpError(400, "Video nền không tồn tại");
-  if (voiceProvider(s.voice) === "vbee" && !vbeeConfigured()) {
-    throw new HttpError(400, "Giọng Vbee cần VBEE_APP_ID và VBEE_TOKEN trong .env.local");
-  }
+}
+
+/** OlvRoc ids are free text, so check them against the installed voice list. */
+async function validateOlvrocVoice(voice: string): Promise<void> {
+  if (voiceProvider(voice) !== "olvroc") return;
+  const status = await olvrocStatus();
+  if (!status.ok) throw new HttpError(400, `Giọng OlvRoc chưa dùng được: ${status.error}`);
+  if (!(await listOlvrocVoices()).some((v) => v.id === voice)) throw new HttpError(400, "Không có giọng OlvRoc này");
 }
 
 const readIfExists = (file: string) => (existsSync(file) ? readFileSync(file, "utf8") : null);
@@ -235,6 +252,7 @@ app.post("/api/jobs", upload.single("media"), async (req, res) => {
     const rawSettings = typeof req.body.settings === "string" ? JSON.parse(req.body.settings || "{}") : (req.body.settings ?? {});
     const settings = settingsSchema.parse(rawSettings);
     validateSettingsRefs(settings);
+    await validateOlvrocVoice(settings.voice);
     const callbackUrl = req.body.callbackUrl
       ? z.url({ protocol: /^https?$/, error: "callbackUrl phải là link http(s)" }).parse(String(req.body.callbackUrl).trim())
       : null;
@@ -289,13 +307,15 @@ app.post("/api/jobs/:id/continue", (req, res) => {
   res.json(job);
 });
 
-app.post("/api/jobs/:id/rerun", (req, res) => {
-  const job = loadJob(req.params.id);
-  assertIdle(job);
+app.post("/api/jobs/:id/rerun", async (req, res) => {
   const body = z.object({
     fromStep: z.enum(STEPS).optional(),
     settings: settingsSchema.optional(),
   }).parse(req.body);
+  // Awaited before the idle check so no other request can start the job in between.
+  if (body.settings) await validateOlvrocVoice(body.settings.voice);
+  const job = loadJob(req.params.id);
+  assertIdle(job);
 
   if (body.settings) {
     validateSettingsRefs(body.settings);

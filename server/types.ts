@@ -130,7 +130,7 @@ export interface SystemStatus {
   whisper: { ok: boolean; python: string; error: string | null };
   gemini: { ok: boolean; model: string };
   claude: { ok: boolean; installed: boolean; version: string | null; subscription: string | null; model: string; error: string | null };
-  vbee: { ok: boolean; configured: boolean; voices: number; error: string | null };
+  olvroc: { ok: boolean; python: string; voices: number; error: string | null };
   ytdlp: { ok: boolean; version: string | null; cookies: string | null };
 }
 
@@ -163,25 +163,29 @@ export interface Background {
   createdAt: string;
 }
 
-export type TtsProvider = "edge" | "vbee";
+export type TtsProvider = "edge" | "olvroc";
+
+export const TTS_PROVIDER_LABELS: Record<TtsProvider, string> = {
+  edge: "Edge TTS",
+  olvroc: "OlvRoc",
+};
 
 export interface Voice {
-  /** Edge voices use their Microsoft name; Vbee voices are "vbee:<voiceCode>". */
+  /** Edge voices use their Microsoft name; OlvRoc voices are "olvroc:<preset name>". */
   id: string;
   name: string;
   gender: "male" | "female" | null;
   provider: TtsProvider;
-  /** Sample clip hosted by the provider (Vbee), playable without spending credits. */
-  demoUrl: string | null;
-  /** Vbee credits charged per character (1 for standard voices, 2–3 for premium ones). */
-  creditFactor: number | null;
+  /** Shown under the name in place of gender and region, e.g. "Nam · Bắc · Phong cách tin tức". */
+  detail?: string;
 }
 
-export const VBEE_PREFIX = "vbee:";
+export const OLVROC_PREFIX = "olvroc:";
 
-export const voiceProvider = (id: string): TtsProvider => (id.startsWith(VBEE_PREFIX) ? "vbee" : "edge");
+export const voiceProvider = (id: string): TtsProvider =>
+  id.startsWith(OLVROC_PREFIX) ? "olvroc" : "edge";
 
 export const EDGE_VOICES: Voice[] = [
-  { id: "vi-VN-HoaiMyNeural", name: "Hoài My", gender: "female", provider: "edge", demoUrl: null, creditFactor: null },
-  { id: "vi-VN-NamMinhNeural", name: "Nam Minh", gender: "male", provider: "edge", demoUrl: null, creditFactor: null },
+  { id: "vi-VN-HoaiMyNeural", name: "Hoài My", gender: "female", provider: "edge" },
+  { id: "vi-VN-NamMinhNeural", name: "Nam Minh", gender: "male", provider: "edge" },
 ];

@@ -45,9 +45,9 @@ export function useSystemItems(): Item[] | null {
         : "Cài: npm i -g @anthropic-ai/claude-code, rồi chạy: claude để đăng nhập",
     },
     {
-      key: "vbee", label: "Vbee", ok: s.vbee.ok, optional: true,
-      detail: s.vbee.ok ? `${s.vbee.voices} giọng tiếng Việt` : s.vbee.error ?? "Chưa cấu hình",
-      fix: "Đặt VBEE_APP_ID và VBEE_TOKEN (lấy trong Vbee Studio) vào .env.local rồi khởi động lại server",
+      key: "olvroc", label: "OlvRoc", ok: s.olvroc.ok, optional: true,
+      detail: s.olvroc.ok ? `${s.olvroc.voices} giọng tiếng Việt miễn phí` : s.olvroc.error ?? "Chưa cài",
+      fix: "Chạy: pnpm setup:whisper (thư viện) và pnpm setup:olvroc (model ~520 MB)",
     },
     {
       key: "gemini", label: "Gemini", ok: s.gemini.ok, optional: true,

@@ -70,6 +70,15 @@ export async function extractAudio(input: string, outWav: string, p?: FfmpegProg
   await ffmpeg(["-y", "-i", input, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", outWav], p);
 }
 
+/**
+ * Encode a WAV to MP3, sped up or slowed down by `tempo` (1 = unchanged) without
+ * changing the pitch. The output is always MP3, whatever its file extension.
+ */
+export async function encodeMp3(inWav: string, outFile: string, tempo = 1, signal?: AbortSignal): Promise<void> {
+  const filter = tempo === 1 ? [] : ["-filter:a", `atempo=${tempo}`];
+  await ffmpeg(["-y", "-i", inWav, ...filter, "-c:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", outFile], { totalSec: null, signal });
+}
+
 /** Concatenate audio clips with a short silence after each, re-encoded to AAC. */
 export async function concatAudio(inputs: string[], gapSec: number, outFile: string, p?: FfmpegProgress): Promise<void> {
   const args = ["-y"];

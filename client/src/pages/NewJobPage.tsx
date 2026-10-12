@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { api, type JobSettings } from "../api";
 import {
-  BackgroundPicker, DEFAULT_SETTINGS, FormatPicker, FullVideoToggle, PartLengthPicker, ReviewToggle, StylePicker, SubtitleToggle, VoicePicker, defaultProvider, defaultVoice,
+  BackgroundPicker, DEFAULT_SETTINGS, FormatPicker, FullVideoToggle, PartLengthPicker, ReviewToggle, StylePicker, SubtitleToggle, VoicePicker, defaultProvider,
   estimateParts, providerReady,
 } from "../components/Pickers";
 import { FileDrop } from "../components/FileDrop";
@@ -68,7 +68,7 @@ export function NewJobPage() {
     const aiProvider = defaultProvider(meta);
     // With no AI available, default to the style that keeps the transcript as is.
     const preferred = providerReady(meta, aiProvider) ? styles.find((s) => s.prompt) : styles.find((s) => !s.prompt);
-    setSettings({ ...DEFAULT_SETTINGS, voice: defaultVoice(meta), aiProvider, styleId: (preferred ?? styles[0]).id, backgroundId: backgrounds[0]?.id ?? "" });
+    setSettings({ ...DEFAULT_SETTINGS, aiProvider, styleId: (preferred ?? styles[0]).id, backgroundId: backgrounds[0]?.id ?? "" });
   }, [meta, styles, backgrounds, settings]);
 
   useEffect(() => {
@@ -154,7 +154,7 @@ export function NewJobPage() {
       step: 1, label: "Phong cách",
       value: `${style?.name ?? "?"}${style?.prompt || mode === "topic" ? ` · ${AI_PROVIDER_LABELS[settings.aiProvider]}` : ""}${settings.reviewBeforeTts ? " · có duyệt" : ""}`,
     },
-    { step: 2, label: "Giọng đọc", value: `${voice?.name ?? settings.voice}${voice?.provider === "vbee" ? " (Vbee)" : ""} · ${settings.rate}` },
+    { step: 2, label: "Giọng đọc", value: `${voice?.name ?? settings.voice}${voice?.provider === "olvroc" ? " (OlvRoc)" : ""} · ${settings.rate}` },
     { step: 3, label: "Video nền", value: `${background?.name ?? "Chưa chọn"}${settings.subtitles ? " · có phụ đề" : ""}` },
     {
       step: 3, label: "Định dạng",

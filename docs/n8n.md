@@ -41,7 +41,7 @@ Trong n8n, tạo credential **Header Auth** với Name `Authorization` và Value
  "backgroundId":"<id video nền>","reviewBeforeTts":false,"subtitles":true,"fullVideo":true,"format":"tiktok","fit":"blur","minPartSec":120,"maxPartSec":300}
 ```
 
-Lấy `styleId` từ `GET /api/styles` và `backgroundId` từ `GET /api/backgrounds`. Giọng đọc: `vi-VN-HoaiMyNeural` (nữ) hoặc `vi-VN-NamMinhNeural` (nam). `aiProvider` là `claude` hoặc `gemini`. `format` là `tiktok` (dọc 1080×1920), `youtube` (ngang 1920×1080) hoặc `original` (giữ khung video nền, mặc định); `fit` là `blur` (nền mờ, mặc định) hoặc `crop` (cắt cho đầy khung).
+Lấy `styleId` từ `GET /api/styles` và `backgroundId` từ `GET /api/backgrounds`. Giọng đọc: `vi-VN-HoaiMyNeural` (nữ) hoặc `vi-VN-NamMinhNeural` (nam), hoặc giọng OlvRoc miễn phí dạng `olvroc:<tên giọng>` (ví dụ `olvroc:Hải Đăng`, danh sách đầy đủ trong `voices` của `GET /api/meta`). `aiProvider` là `claude` hoặc `gemini`. `format` là `tiktok` (dọc 1080×1920), `youtube` (ngang 1920×1080) hoặc `original` (giữ khung video nền, mặc định); `fit` là `blur` (nền mờ, mặc định) hoặc `crop` (cắt cho đầy khung).
 
 **Tạo job từ link video** (YouTube, TikTok, Facebook…) thay vì tải file: gửi Body **JSON**, Story Studio tự tải phần âm thanh về:
 
@@ -50,7 +50,7 @@ Lấy `styleId` từ `GET /api/styles` và `backgroundId` từ `GET /api/backgro
   "url": "https://www.youtube.com/watch?v=...",
   "title": "",
   "callbackUrl": "{{ $execution.resumeUrl }}",
-  "settings": { "styleId": "ke-chuyen-cuon-hut", "aiProvider": "claude", "voice": "vbee:hn_female_ngochuyen_full_48k-fhg",
+  "settings": { "styleId": "ke-chuyen-cuon-hut", "aiProvider": "claude", "voice": "olvroc:Hải Đăng",
                 "rate": "+0%", "backgroundId": "<id>", "reviewBeforeTts": false, "subtitles": true, "fullVideo": true, "format": "tiktok", "fit": "blur", "minPartSec": 120, "maxPartSec": 300 }
 }
 ```

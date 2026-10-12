@@ -1,0 +1,13 @@
+OlvRoc
+
+This folder contains code and data derived from VieNeu-TTS
+(https://github.com/pnnbao97/VieNeu-TTS, commit bd0f88e) by Phạm Nguyễn Ngọc Bảo,
+licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Changes: renamed; engine.py trimmed to preset-voice synthesis on CPU (voice
+cloning and streaming removed); tts.py rewritten; comments edited.
+
+The model files listed in model_files.json come from the Hugging Face repositories
+pnnbao-ump/VieNeu-TTS-v3-Turbo and OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX,
+both licensed under the Apache License, Version 2.0. Their file names and the
+names inside the .onnx and config.json files are renamed when they are installed.
