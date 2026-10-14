@@ -73,15 +73,18 @@ function classify(message: string): Error {
 /**
  * One single-turn completion through Claude Code's headless mode
  * (`claude -p`), billed to the signed-in Claude subscription.
- * Tools are disabled and no settings or session history are loaded or saved.
+ * Tools are disabled, except web search when `webSearch` is set, and no
+ * settings or session history are loaded or saved.
  */
-export async function claudeComplete(prompt: string, systemPrompt: string, signal: AbortSignal): Promise<string> {
+export async function claudeComplete(
+  prompt: string, systemPrompt: string, signal: AbortSignal, opts: { webSearch?: boolean } = {},
+): Promise<string> {
   const args = [
     "-p",
     "--model", config.claudeModel,
     "--output-format", "json",
     "--system-prompt", systemPrompt,
-    "--tools", "",
+    ...(opts.webSearch ? ["--tools", "WebSearch", "--allowedTools", "WebSearch"] : ["--tools", ""]),
     "--setting-sources", "",
     "--no-session-persistence",
   ];

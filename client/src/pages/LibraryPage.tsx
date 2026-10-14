@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useLocation } from "react-router-dom";
-import { BadgeCheck, Bell, BellRing, FileText, Headphones, LoaderCircle, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
-import { api, backgroundUrl, type Background, type Brand, type Style } from "../api";
+import { BadgeCheck, Bell, BellRing, FastForward, FileText, FlipHorizontal2, Headphones, LoaderCircle, Palette, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import { api, backgroundUrl, type Background, type BackgroundLook, type Brand, type Style } from "../api";
 import { FileDrop } from "../components/FileDrop";
+import { BACKGROUNDS_PER_PAGE, Pager, usePaging } from "../components/Pager";
 import { errorMessage, useToast } from "../components/Toast";
-import { formatDuration, stripExt } from "../format";
+import { BACKGROUND_SPEEDS, formatDuration, formatSpeed, lookStyle, playAt, stripExt } from "../format";
 import { useLibrary } from "../useLibrary";
 
-function BackgroundCard({ bg, onDelete }: { bg: Background; onDelete: () => void }) {
-  const video = useRef<HTMLVideoElement>(null);
+function BackgroundCard({ bg, onLook, onDelete }: { bg: Background; onLook: (patch: BackgroundLook) => void; onDelete: () => void }) {
+  const video = useRef<HTMLVideoElement | null>(null);
+  const speed = bg.speed ?? 1;
+  const nextSpeed = BACKGROUND_SPEEDS[(BACKGROUND_SPEEDS.indexOf(speed) + 1) % BACKGROUND_SPEEDS.length];
+  const toggles = [
+    { key: "mirror", on: !!bg.mirror, Icon: FlipHorizontal2, label: "Lật ngang", hint: "Lật ngang hình (như soi gương) khi dựng video" },
+    { key: "recolor", on: !!bg.recolor, Icon: Palette, label: "Đổi màu", hint: "Đổi nhẹ tông màu và độ đậm màu khi dựng video" },
+  ] as const;
   return (
     <div
       className="bg-card"
@@ -16,20 +23,47 @@ function BackgroundCard({ bg, onDelete }: { bg: Background; onDelete: () => void
       onMouseLeave={() => video.current?.pause()}
     >
       <div className="bg-tile static">
-        <video ref={video} src={`${backgroundUrl(bg.file)}#t=0.5`} muted loop playsInline preload="metadata" />
+        <video
+          ref={(el) => { video.current = el; playAt(speed)(el); }}
+          src={`${backgroundUrl(bg.file)}#t=0.5`} style={lookStyle(bg)} muted loop playsInline preload="metadata"
+        />
         <span className="bg-duration">{formatDuration(bg.durationSec)}</span>
+        <span className="bg-look-tags">
+          {speed !== 1 && <span>Nhanh {formatSpeed(speed)}</span>}
+          {toggles.filter((t) => t.on).map((t) => <span key={t.key}>{t.label}</span>)}
+        </span>
       </div>
       <div className="bg-card-foot">
-        <b className="clamp-1 spacer" title={bg.name}>{bg.name}</b>
-        <button className="icon-btn danger" title="Xoá" aria-label={`Xoá video nền ${bg.name}`} onClick={onDelete}><Trash2 size={15} /></button>
+        <b className="clamp-1" title={bg.name}>{bg.name}</b>
+        <div className="bg-card-actions">
+          <button
+            className={`icon-btn speed-btn ${speed !== 1 ? "on" : ""}`}
+            title={`Tua nhanh khi dựng video: đang ${formatSpeed(speed)}, bấm để đổi sang ${formatSpeed(nextSpeed)}`}
+            aria-label={`Tốc độ ${bg.name}: ${formatSpeed(speed)}`} onClick={() => onLook({ speed: nextSpeed })}
+          >
+            <FastForward size={15} />{speed !== 1 && <span>{formatSpeed(speed)}</span>}
+          </button>
+          {toggles.map(({ key, on, Icon, label, hint }) => (
+            <button
+              key={key} className={`icon-btn ${on ? "on" : ""}`} title={`${hint}: đang ${on ? "bật" : "tắt"}`}
+              aria-label={`${label} ${bg.name}`} aria-pressed={on} onClick={() => onLook({ [key]: !on })}
+            >
+              <Icon size={15} />
+            </button>
+          ))}
+          <span className="spacer" />
+          <button className="icon-btn danger" title="Xoá" aria-label={`Xoá video nền ${bg.name}`} onClick={onDelete}><Trash2 size={15} /></button>
+        </div>
       </div>
     </div>
   );
 }
 
 function BackgroundsSection() {
-  const { backgrounds, reload } = useLibrary();
+  const { backgrounds, loaded, reload } = useLibrary();
   const [uploading, setUploading] = useState<{ name: string; progress: number } | null>(null);
+  const paging = usePaging(backgrounds, BACKGROUNDS_PER_PAGE);
+  const picker = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
   const upload = async (file: File) => {
@@ -38,6 +72,8 @@ function BackgroundsSection() {
     try {
       await api.uploadBackground(file, name, (progress) => setUploading({ name, progress }));
       await reload();
+      // New videos are added at the end, so show the page they landed on.
+      paging.setPage(Math.floor(backgrounds.length / BACKGROUNDS_PER_PAGE));
       toast("success", `Đã thêm video nền "${name}"`);
     } catch (err) {
       toast("error", errorMessage(err));
@@ -50,32 +86,52 @@ function BackgroundsSection() {
     <section className="card" id="backgrounds">
       <div className="section-head">
         <div>
-          <h2>Video nền</h2>
-          <p className="small muted">Video được lặp lại phía sau giọng đọc. Nên dùng video ngang, không có chữ, dài 30 giây trở lên.</p>
+          <h2>Video nền{backgrounds.length > 0 && <span className="muted"> · {backgrounds.length}</span>}</h2>
+          <p className="small muted">
+            Video được lặp lại phía sau giọng đọc. Nên dùng video ngang, không có chữ, dài 30 giây trở lên.
+            Nút <FastForward size={13} className="inline-icon" /> tua nhanh, <FlipHorizontal2 size={13} className="inline-icon" /> lật ngang
+            và <Palette size={13} className="inline-icon" /> đổi nhẹ màu chỉ áp dụng khi dựng, file gốc giữ nguyên.
+          </p>
         </div>
-      </div>
-      <div className="bg-grid">
-        {backgrounds.map((b) => (
-          <BackgroundCard
-            key={b.id} bg={b}
-            onDelete={() => {
-              if (!confirm(`Xoá video nền "${b.name}"?`)) return;
-              api.deleteBackground(b.id).then(() => reload()).then(() => toast("success", "Đã xoá video nền"))
-                .catch((e) => toast("error", errorMessage(e)));
-            }}
-          />
-        ))}
         {uploading ? (
-          <div className="dropzone compact disabled">
-            <LoaderCircle size={22} className="spin drop-icon" />
-            <div className="drop-title clamp-1">{uploading.name}</div>
+          <div className="upload-status">
+            <span className="small clamp-1"><LoaderCircle size={14} className="spin inline-icon" /> {uploading.name}</span>
             <div className="progress"><div style={{ width: `${uploading.progress * 100}%` }} /></div>
-            <div className="drop-hint">{Math.round(uploading.progress * 100)}%</div>
           </div>
-        ) : (
-          <FileDrop compact accept="video/*,.mkv" onFile={upload} title="Thêm video nền" hint="Kéo thả hoặc bấm để chọn" />
+        ) : backgrounds.length > 0 && (
+          <button onClick={() => picker.current?.click()}><Plus size={15} /> Thêm video nền</button>
         )}
+        <input
+          ref={picker} type="file" accept="video/*,.mkv" hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void upload(f);
+            e.target.value = "";
+          }}
+        />
       </div>
+      {backgrounds.length === 0 ? loaded && (
+        <FileDrop accept="video/*,.mkv" onFile={upload} disabled={!!uploading} title="Thêm video nền" hint="Kéo thả hoặc bấm để chọn" />
+      ) : (
+        <>
+          <div className="bg-grid wide">
+            {paging.items.map((b) => (
+              <BackgroundCard
+                key={b.id} bg={b}
+                onLook={(patch) => {
+                  api.updateBackground(b.id, patch).then(() => reload()).catch((e) => toast("error", errorMessage(e)));
+                }}
+                onDelete={() => {
+                  if (!confirm(`Xoá video nền "${b.name}"?`)) return;
+                  api.deleteBackground(b.id).then(() => reload()).then(() => toast("success", "Đã xoá video nền"))
+                    .catch((e) => toast("error", errorMessage(e)));
+                }}
+              />
+            ))}
+          </div>
+          <Pager paging={paging} label="Phân trang video nền" />
+        </>
+      )}
     </section>
   );
 }

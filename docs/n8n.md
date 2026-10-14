@@ -38,10 +38,10 @@ Trong n8n, tạo credential **Header Auth** với Name `Authorization` và Value
 
 ```json
 {"styleId":"ke-chuyen-cuon-hut","aiProvider":"claude","voice":"vi-VN-HoaiMyNeural","rate":"+0%",
- "backgroundId":"<id video nền>","reviewBeforeTts":false,"subtitles":true,"fullVideo":true,"format":"tiktok","fit":"blur","minPartSec":120,"maxPartSec":300}
+ "backgroundIds":["<id video nền>"],"reviewBeforeTts":false,"subtitles":true,"fullVideo":true,"formats":["tiktok","youtube"],"fit":"blur","minPartSec":120,"maxPartSec":300}
 ```
 
-Lấy `styleId` từ `GET /api/styles` và `backgroundId` từ `GET /api/backgrounds`. Giọng đọc: `vi-VN-HoaiMyNeural` (nữ) hoặc `vi-VN-NamMinhNeural` (nam), hoặc giọng OlvRoc miễn phí dạng `olvroc:<tên giọng>` (ví dụ `olvroc:Hải Đăng`, danh sách đầy đủ trong `voices` của `GET /api/meta`). `aiProvider` là `claude` hoặc `gemini`. `format` là `tiktok` (dọc 1080×1920), `youtube` (ngang 1920×1080) hoặc `original` (giữ khung video nền, mặc định); `fit` là `blur` (nền mờ, mặc định) hoặc `crop` (cắt cho đầy khung).
+Lấy `styleId` từ `GET /api/styles` và id video nền từ `GET /api/backgrounds`. `backgroundIds` là danh sách video nền được ghép ngẫu nhiên (chỉ lặp lại khi đã dùng hết); bỏ trường này thì dùng cả thư viện. Workflow cũ gửi `"backgroundId"` (một id) vẫn chạy được. Giọng đọc: `vi-VN-HoaiMyNeural` (nữ) hoặc `vi-VN-NamMinhNeural` (nam), hoặc giọng OlvRoc miễn phí dạng `olvroc:<tên giọng>` (ví dụ `olvroc:Hải Đăng`, danh sách đầy đủ trong `voices` của `GET /api/meta`). `aiProvider` là `claude` hoặc `gemini`. `formats` là danh sách một hoặc nhiều định dạng: `tiktok` (dọc 1080×1920), `youtube` (ngang 1920×1080), `original` (giữ khung video nền, mặc định). Mỗi định dạng ra một bộ video riêng; khi có cả `tiktok` và `youtube` thì YouTube chỉ ra một video dài cả truyện, không chia phần. Workflow cũ gửi `"format": "tiktok"` (một giá trị) vẫn chạy được; `fit` là `blur` (nền mờ, mặc định) hoặc `crop` (cắt cho đầy khung).
 
 **Tạo job từ link video** (YouTube, TikTok, Facebook…) thay vì tải file: gửi Body **JSON**, Story Studio tự tải phần âm thanh về:
 
@@ -51,7 +51,7 @@ Lấy `styleId` từ `GET /api/styles` và `backgroundId` từ `GET /api/backgro
   "title": "",
   "callbackUrl": "{{ $execution.resumeUrl }}",
   "settings": { "styleId": "ke-chuyen-cuon-hut", "aiProvider": "claude", "voice": "olvroc:Hải Đăng",
-                "rate": "+0%", "backgroundId": "<id>", "reviewBeforeTts": false, "subtitles": true, "fullVideo": true, "format": "tiktok", "fit": "blur", "minPartSec": 120, "maxPartSec": 300 }
+                "rate": "+0%", "backgroundIds": ["<id>"], "reviewBeforeTts": false, "subtitles": true, "fullVideo": true, "formats": ["tiktok", "youtube"], "fit": "blur", "minPartSec": 120, "maxPartSec": 300 }
 }
 ```
 
@@ -65,7 +65,7 @@ Lấy `styleId` từ `GET /api/styles` và `backgroundId` từ `GET /api/backgro
   "title": "",
   "callbackUrl": "{{ $execution.resumeUrl }}",
   "settings": { "styleId": "ke-chuyen-cuon-hut", "aiProvider": "claude", "voice": "vi-VN-HoaiMyNeural",
-                "rate": "+0%", "backgroundId": "<id>", "reviewBeforeTts": false, "subtitles": true, "fullVideo": true, "format": "tiktok", "fit": "blur", "minPartSec": 120, "maxPartSec": 300 }
+                "rate": "+0%", "backgroundIds": ["<id>"], "reviewBeforeTts": false, "subtitles": true, "fullVideo": true, "formats": ["tiktok", "youtube"], "fit": "blur", "minPartSec": 120, "maxPartSec": 300 }
 }
 ```
 
@@ -76,19 +76,38 @@ Lấy `styleId` từ `GET /api/styles` và `backgroundId` từ `GET /api/backgro
 ```json
 {
   "event": "job.done",            // hoặc "job.failed", "job.waiting_review"
-  "job": { "id": "...", "title": "...", "status": "done", "error": null, "parts": [...] },
+  "job": { "id": "...", "title": "...", "status": "done", "error": null, "outputs": [...] },
   "links": {
     "page": "http://host.docker.internal:5178/jobs/<id>",
-    "parts": [
-      { "index": 1, "durationSec": 111.1,
-        "video": "http://host.docker.internal:5178/files/jobs/<id>/parts/part-01.mp4",
-        "text":  "http://host.docker.internal:5178/files/jobs/<id>/parts/part-01.txt" }
-    ]
+    "outputs": [
+      { "format": "tiktok",
+        "parts": [
+          { "index": 1, "durationSec": 111.1,
+            "video": "http://host.docker.internal:5178/files/jobs/<id>/parts/tiktok/part-01.mp4",
+            "text":  "http://host.docker.internal:5178/files/jobs/<id>/parts/tiktok/part-01.txt",
+            "cover": "http://host.docker.internal:5178/files/jobs/<id>/parts/tiktok/part-01.jpg",
+            "post":  { "title": null, "description": "Tiêu đề | Phần 1/5\n\nCâu nhử…\n\n#truyenaudio #fyp", "tags": [] } }
+        ],
+        "full": { "durationSec": 560.4, "video": ".../parts/tiktok/full.mp4", "text": ".../parts/tiktok/full.txt" } },
+      { "format": "youtube", "parts": [],
+        "full": { "durationSec": 560.4, "video": ".../parts/youtube/full.mp4", "text": ".../parts/youtube/full.txt" } }
+    ],
+    "parts": [...],   // bằng outputs[0].parts
+    "full": {...}     // bằng outputs[0].full
   }
 }
 ```
 
-**Tải video.** Dùng Split Out trên `body.links.parts`, rồi HTTP Request `GET {{ $json.video }}` (có Header Auth, Response Format = File). Sau đó đưa file sang YouTube, Drive, Telegram…
+Mỗi định dạng đã chọn là một phần tử trong `links.outputs`. `full` là video cả truyện: bản ghép các phần (khi bật `fullVideo`), hoặc video duy nhất của YouTube khi chọn cùng TikTok. `links.parts` và `links.full` giữ lại cho workflow cũ, trỏ tới định dạng đầu tiên.
+
+**Gợi ý đăng bài.** Sau khi dựng xong, bước "Gợi ý đăng bài" cho AI của job đọc cả truyện, xác định ngách truyện và tìm trên web các truyện, kênh cùng ngách (kết quả ở `job.publish.niche`), rồi viết tiêu đề, mô tả, hashtag (và tiêu đề, mô tả, thẻ YouTube nếu có định dạng YouTube), rồi vẽ ảnh bìa JPG cho từng video. Mỗi video trong `links` có:
+
+- `cover`: link ảnh bìa.
+- `post`: nội dung để dán khi đăng. Với TikTok, `title` là `null` và `description` đã gồm tiêu đề, câu nhử của phần đó và hashtag. Với YouTube, `title`, `description`, `tags` tách riêng.
+
+Bộ gợi ý đầy đủ (nhiều tiêu đề, mô tả, hashtag…) nằm ở `job.publish`. AI lỗi thì job vẫn xong, gợi ý được lấy từ tên truyện (`job.publish.by` là `null`). Tạo lại gợi ý: `POST /api/jobs/{id}/rerun` với `{"fromStep": "publish"}`.
+
+**Tải video.** Dùng Split Out trên `body.links.parts` (hoặc `body.links.outputs[1].full` cho bản YouTube), rồi HTTP Request `GET {{ $json.video }}` (có Header Auth, Response Format = File). Sau đó đưa file sang YouTube, Drive, Telegram…
 
 Muốn mọi job (kể cả job tạo từ giao diện) đều báo về một workflow cố định, đặt `WEBHOOK_URL` trong `.env.local` trỏ tới một Webhook node của n8n, ví dụ `http://localhost:5678/webhook/story-studio`. Story Studio chạy trên máy chủ nên gọi n8n qua cổng đã publish của container.
 

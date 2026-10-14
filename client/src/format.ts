@@ -1,7 +1,10 @@
-import type { JobStatus } from "../../server/types";
+import type { CSSProperties } from "react";
+import { RECOLOR, type BackgroundLook, type JobStatus } from "../../server/types";
 
-export { AI_PROVIDER_LABELS, STEP_LABELS, VIDEO_FORMATS } from "../../server/types";
-export { TTS_CHARS_PER_SEC, estimateSpeechSec, formatBytes, formatChars, formatDuration } from "../../server/lib/format";
+export {
+  AI_PROVIDER_LABELS, BACKGROUND_SPEEDS, FORMAT_ORDER, STEP_LABELS, VIDEO_FORMATS, formatPlan, postFor, renderedSec, videoCount,
+} from "../../server/types";
+export { TTS_CHARS_PER_SEC, estimateSpeechSec, formatBytes, formatChars, formatDuration, formatSpeed } from "../../server/lib/format";
 
 export const STATUS_LABELS: Record<JobStatus, string> = {
   queued: "Đang chờ",
@@ -40,3 +43,17 @@ export function formatSpan(sec: number): string {
 }
 
 export const stripExt = (name: string) => name.replace(/\.[^.]+$/, "");
+
+/** CSS copy of a background's mirror and colour shift (lookFilter in server/lib/ffmpeg.ts); speed is playAt. */
+/** Callback ref that plays a preview video at a background's speed, so it moves like the render. */
+export const playAt = (speed = 1) => (el: HTMLVideoElement | null) => {
+  if (el) el.defaultPlaybackRate = el.playbackRate = speed;
+};
+
+export function lookStyle(look: BackgroundLook): CSSProperties {
+  const { hueDeg, saturation, contrast } = RECOLOR;
+  return {
+    transform: look.mirror ? "scaleX(-1)" : undefined,
+    filter: look.recolor ? `hue-rotate(${hueDeg}deg) saturate(${saturation}) contrast(${contrast})` : undefined,
+  };
+}

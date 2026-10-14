@@ -1,10 +1,10 @@
 import type {
-  AiProvider, Background, Brand, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
+  AiProvider, Background, BackgroundLook, Brand, DefaultSettings, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
   VideoFormat, Voice,
 } from "../../server/types";
 
 export type {
-  AiProvider, Background, Brand, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
+  AiProvider, Background, BackgroundLook, Brand, DefaultSettings, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
   VideoFormat, Voice,
 };
 
@@ -77,6 +77,9 @@ export const api = {
   stop: (id: string) => request<Job>("POST", `/api/jobs/${id}/stop`),
   deleteJob: (id: string) => request<void>("DELETE", `/api/jobs/${id}`),
 
+  defaults: () => request<DefaultSettings>("GET", "/api/defaults"),
+  saveDefaults: (defaults: DefaultSettings) => request<DefaultSettings>("PUT", "/api/defaults", defaults),
+
   brand: () => request<Brand>("GET", "/api/brand"),
   saveBrand: (brand: Brand) => request<Brand>("PUT", "/api/brand", brand),
 
@@ -92,6 +95,7 @@ export const api = {
     form.append("name", name);
     return upload<Background>("/api/backgrounds", form, onProgress);
   },
+  updateBackground: (id: string, patch: BackgroundLook) => request<Background>("PATCH", `/api/backgrounds/${id}`, patch),
   deleteBackground: (id: string) => request<void>("DELETE", `/api/backgrounds/${id}`),
 };
 

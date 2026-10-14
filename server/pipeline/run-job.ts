@@ -7,14 +7,15 @@ import { estimateSpeechSec, formatBytes, formatChars, formatDuration } from "../
 import { getBackground, getBrand, getStyle, jobDir, saveJob } from "../store.js";
 import { listOlvrocVoices } from "../lib/olvroc.js";
 import {
-  AI_PROVIDER_LABELS, EDGE_VOICES, STEPS, TTS_PROVIDER_LABELS, VIDEO_FORMATS, voiceProvider, type Job, type LogLevel, type Step,
+  AI_PROVIDER_LABELS, EDGE_VOICES, STEPS, TTS_PROVIDER_LABELS, VIDEO_FORMATS, formatPlan, renderedSec, videoCount, voiceProvider,
+  type Background, type Job, type JobOutput, type LogLevel, type Step,
 } from "../types.js";
-import { paths } from "../config.js";
 import { transcribe } from "./transcribe.js";
 import { rewriteScript } from "./rewrite.js";
 import { writeStory } from "./write.js";
 import { synthesizeScript } from "./tts.js";
 import { renderParts } from "./render.js";
+import { preparePublish } from "./publish.js";
 
 const LOG_LIMIT = 500;
 
@@ -29,6 +30,7 @@ export const artifacts = (id: string) => {
     script: join(dir, "script.txt"),
     ttsDir: join(dir, "tts"),
     partsDir: join(dir, "parts"),
+    publishKit: join(dir, "publish.json"),
   };
 };
 
@@ -53,8 +55,15 @@ export function resetFromStep(job: Job, fromStep: Step): void {
   if (at("tts")) rmSync(a.ttsDir, { recursive: true, force: true });
   if (at("render")) {
     rmSync(a.partsDir, { recursive: true, force: true });
-    job.parts = [];
-    job.fullVideo = null;
+    job.outputs = [];
+  }
+  if (at("publish")) {
+    rmSync(a.publishKit, { force: true });
+    for (const v of job.outputs.flatMap((o) => [...o.parts, ...(o.fullVideo ? [o.fullVideo] : [])])) {
+      if (v.cover) rmSync(join(a.partsDir, v.cover), { force: true });
+      delete v.cover;
+    }
+    job.publish = null;
   }
   for (const s of STEPS) if (at(s)) delete job.timings[s];
 }
@@ -247,51 +256,89 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
     return;
   }
 
-  // ── 5. TTS ──────────────────────────────────────────────────────────────
-  const voiceId = job.settings.voice;
-  const provider = voiceProvider(voiceId);
-  const knownVoices = provider === "olvroc" ? await listOlvrocVoices().catch(() => []) : EDGE_VOICES;
-  const voiceName = knownVoices.find((v) => v.id === voiceId)?.name ?? voiceId.replace(/^olvroc:/, "");
-  enter("tts", `Bắt đầu đọc kịch bản: giọng ${voiceName} (${TTS_PROVIDER_LABELS[provider]}), tốc độ ${job.settings.rate}`);
-  const segments = await synthesizeScript({
-    script: readFileSync(a.script, "utf8"),
-    voice: job.settings.voice,
-    rate: job.settings.rate,
-    maxPartSec: job.settings.maxPartSec,
-    workDir: a.ttsDir,
-    r,
-  });
-  const speechSec = segments.reduce((s, x) => s + x.durationSec, 0);
-  r.log(`Giọng đọc xong: ${segments.length} đoạn, tổng ${formatDuration(speechSec)} (mất ${stepElapsed("tts")})`, "success");
-
-  // ── 6. Render ───────────────────────────────────────────────────────────
-  const background = getBackground(job.settings.backgroundId);
-  if (!background) throw new Error("Video nền đã bị xoá, hãy chọn video nền khác rồi chạy lại");
-  const format = job.settings.format === "original" ? "" : `, khung ${VIDEO_FORMATS[job.settings.format].label} (${job.settings.fit === "blur" ? "nền mờ" : "cắt cho đầy khung"})`;
+  const backgrounds = job.settings.backgroundIds.map(getBackground).filter((b): b is Background => b !== null);
+  if (backgrounds.length === 0) throw new Error("Các video nền đã chọn đều đã bị xoá, hãy chọn video nền khác rồi chạy lại");
   const brand = getBrand();
-  const stamp = (brand.enabled && brand.text ? `, tên kênh "${brand.text}"` : "") + (brand.subscribe ? ", hiệu ứng đăng ký" : "");
-  enter("render", `Bắt đầu dựng video trên nền "${background.name}"${format}${job.settings.subtitles ? ", có phụ đề" : ""}${stamp}`);
-  const rendered = await renderParts({
-    segments,
-    backgroundFile: join(paths.backgrounds, background.file),
-    minPartSec: job.settings.minPartSec,
-    maxPartSec: job.settings.maxPartSec,
-    subtitles: job.settings.subtitles,
-    fullVideo: job.settings.fullVideo,
-    format: job.settings.format,
+  // Videos already made (a retry after the publish step failed) are kept as they are.
+  if (job.outputs.length === 0) {
+    // ── 5. TTS ──────────────────────────────────────────────────────────────
+    const voiceId = job.settings.voice;
+    const provider = voiceProvider(voiceId);
+    const knownVoices = provider === "olvroc" ? await listOlvrocVoices().catch(() => []) : EDGE_VOICES;
+    const voiceName = knownVoices.find((v) => v.id === voiceId)?.name ?? voiceId.replace(/^olvroc:/, "");
+    enter("tts", `Bắt đầu đọc kịch bản: giọng ${voiceName} (${TTS_PROVIDER_LABELS[provider]}), tốc độ ${job.settings.rate}`);
+    const segments = await synthesizeScript({
+      script: readFileSync(a.script, "utf8"),
+      voice: job.settings.voice,
+      rate: job.settings.rate,
+      maxPartSec: job.settings.maxPartSec,
+      workDir: a.ttsDir,
+      r,
+    });
+    const speechSec = segments.reduce((s, x) => s + x.durationSec, 0);
+    r.log(`Giọng đọc xong: ${segments.length} đoạn, tổng ${formatDuration(speechSec)} (mất ${stepElapsed("tts")})`, "success");
+
+    // ── 6. Render ───────────────────────────────────────────────────────────
+    const plan = formatPlan(job.settings.formats);
+    const frames = plan.map((p) => (p.format === "original" ? "gốc" : VIDEO_FORMATS[p.format].label) + (p.whole ? " (1 video dài)" : "")).join(" + ");
+    const fit = plan.some((p) => p.format !== "original") ? ` (${job.settings.fit === "blur" ? "nền mờ" : "cắt cho đầy khung"})` : "";
+    const stamp = (brand.enabled && brand.text ? `, tên kênh "${brand.text}"` : "") + (brand.subscribe ? ", hiệu ứng đăng ký" : "");
+    const footageSec = backgrounds.reduce((s, b) => s + b.durationSec / (b.speed ?? 1), 0);
+    enter("render", `Bắt đầu dựng video, ghép ngẫu nhiên từ ${backgrounds.length} video nền (tổng ${formatDuration(footageSec)}), khung ${frames}${fit}${job.settings.subtitles ? ", có phụ đề" : ""}${stamp}`);
+    const missing = job.settings.backgroundIds.length - backgrounds.length;
+    if (missing > 0) r.log(`${missing} video nền đã chọn không còn trong thư viện, bỏ qua`, "warn");
+    const outputs: JobOutput[] = [];
+    for (const [k, { format, whole }] of plan.entries()) {
+      // Each format is its own share of the step, and says which one it is when there are several.
+      const tag = plan.length > 1 ? `${VIDEO_FORMATS[format].label} · ` : "";
+      const sub: StepReporter = {
+        ...r,
+        progress: (f) => r.progress((k + f) / plan.length),
+        detail: (text) => r.detail(text && tag + text),
+        log: (msg, level) => r.log(tag + msg, level),
+      };
+      const rendered = await renderParts({
+        segments,
+        backgrounds,
+        seed: `${job.id}:${format}`,
+        minPartSec: job.settings.minPartSec,
+        maxPartSec: job.settings.maxPartSec,
+        subtitles: job.settings.subtitles,
+        fullVideo: job.settings.fullVideo,
+        whole,
+        format,
+        fit: job.settings.fit,
+        brand,
+        workDir: join(a.partsDir, format),
+        r: sub,
+      });
+      const inDir = <T extends { file: string; textFile: string }>(v: T): T => ({ ...v, file: `${format}/${v.file}`, textFile: `${format}/${v.textFile}` });
+      outputs.push({ format, parts: rendered.parts.map(inDir), fullVideo: rendered.full && inDir(rendered.full) });
+    }
+    job.outputs = outputs;
+  }
+
+  // ── 7. Publish ──────────────────────────────────────────────────────────
+  enter("publish", "Bắt đầu chuẩn bị đăng bài: tiêu đề, mô tả, hashtag và ảnh bìa");
+  job.publish = await preparePublish({
+    title: job.title,
+    script: readFileSync(a.script, "utf8"),
+    outputs: job.outputs,
+    provider: job.settings.aiProvider,
+    partsDir: a.partsDir,
+    kitFile: a.publishKit,
+    backgrounds,
     fit: job.settings.fit,
     brand,
-    workDir: a.partsDir,
     r,
   });
-  job.parts = rendered.parts;
-  job.fullVideo = rendered.full;
 
   endStep(job);
   job.status = "done";
   job.step = null;
   job.progress = 1;
-  const totalSec = job.parts.reduce((s, p) => s + p.durationSec, 0);
-  appendLog(job, `Hoàn thành: ${job.parts.length} video${job.fullVideo ? " + 1 video đầy đủ" : ""}, tổng ${formatDuration(totalSec)}`, "success");
+  const { outputs } = job;
+  const made = outputs.map((o) => `${VIDEO_FORMATS[o.format].label}: ${o.parts.length ? `${o.parts.length} phần${o.fullVideo ? " + bản đầy đủ" : ""}` : "1 video dài"}`);
+  appendLog(job, `Hoàn thành ${videoCount(outputs)} video (${made.join(", ")}), dài ${formatDuration(renderedSec(outputs))}`, "success");
   save(true);
 }

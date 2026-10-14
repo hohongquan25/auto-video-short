@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, CircleAlert, Link2, CircleCheck, ClipboardCheck, Columns2, Copy, Download, FileText, Hourglass, LoaderCircle,
+  ArrowLeft, CircleAlert, Link2, CircleCheck, ClipboardCheck, Columns2, Copy, Download, FileText, Hourglass, LoaderCircle, Megaphone,
   PartyPopper, PenLine, RotateCcw, Square, Trash2, Undo2,
 } from "lucide-react";
 import { api, jobFileUrl, type Job, type JobDetail, type JobSettings, type Step } from "../api";
@@ -10,15 +10,17 @@ import {
 } from "../components/Pickers";
 import { Pipeline, STEP_ICONS, StatusBadge } from "../components/JobStatus";
 import { LogView } from "../components/LogView";
-import { errorMessage, useToast } from "../components/Toast";
+import { PublishTab } from "../components/PublishTab";
+import { copyText, errorMessage, useToast } from "../components/Toast";
 import {
-  AI_PROVIDER_LABELS, STEP_LABELS, estimateSpeechSec, formatBytes, formatChars, formatDate, formatDuration, formatSpan,
+  AI_PROVIDER_LABELS, STEP_LABELS, VIDEO_FORMATS, estimateSpeechSec, formatBytes, formatChars, formatDate, formatDuration, formatSpan,
+  renderedSec, videoCount,
 } from "../format";
 import { isActive, jobSteps, stepEta, stepForChange, stepSeconds, totalProcessingSeconds, useNow } from "../jobState";
 import { useLibrary } from "../useLibrary";
 import { usePolling } from "../usePolling";
 
-type Tab = "result" | "script" | "transcript" | "log" | "settings";
+type Tab = "result" | "publish" | "script" | "transcript" | "log" | "settings";
 
 const TAB_FOR_STEP: Record<Step, Tab> = {
   download: "log",
@@ -29,21 +31,13 @@ const TAB_FOR_STEP: Record<Step, Tab> = {
   review: "script",
   tts: "log",
   render: "result",
+  publish: "publish",
 };
 
 function defaultTab(job: Job): Tab {
   if (job.status === "waiting_review") return "script";
   if (job.status === "done") return "result";
   return "log";
-}
-
-async function copyText(text: string, toast: ReturnType<typeof useToast>, what: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast("success", `Đã sao chép ${what}`);
-  } catch {
-    toast("error", "Trình duyệt không cho phép sao chép");
-  }
 }
 
 // ── Status panel ────────────────────────────────────────────────────────────
@@ -138,7 +132,6 @@ function StatusPanel({ job, now, busy, onRetry, onApprove, onTab }: {
       </div>
     );
   }
-  const total = job.parts.reduce((s, p) => s + p.durationSec, 0);
   const took = totalProcessingSeconds(job, now);
   return (
     <div className="status-panel done">
@@ -146,11 +139,15 @@ function StatusPanel({ job, now, busy, onRetry, onApprove, onTab }: {
         <span className="sp-icon"><PartyPopper size={20} /></span>
         <div className="spacer">
           <div className="sp-title">
-            Hoàn thành {job.parts.length} video{job.fullVideo ? " + bản đầy đủ" : ""}, tổng {formatDuration(total)}
+            Hoàn thành {videoCount(job.outputs)} video{job.outputs.length > 1 ? ` (${job.outputs.map((o) => VIDEO_FORMATS[o.format].label).join(" + ")})` : ""},
+            {" "}dài {formatDuration(renderedSec(job.outputs))}
           </div>
           {took > 0 && <div className="small muted">Thời gian xử lý {formatSpan(took)}</div>}
         </div>
-        <button onClick={() => onTab("result")}>Xem video</button>
+        <div className="row">
+          <button onClick={() => onTab("result")}>Xem video</button>
+          {job.publish && <button className="primary" onClick={() => onTab("publish")}><Megaphone size={15} /> Đăng bài</button>}
+        </div>
       </div>
     </div>
   );
@@ -160,7 +157,7 @@ function StatusPanel({ job, now, busy, onRetry, onApprove, onTab }: {
 
 function ResultTab({ job }: { job: Job }) {
   const toast = useToast();
-  if (job.parts.length === 0) {
+  if (job.outputs.length === 0) {
     return <div className="empty">{isActive(job) ? "Video sẽ xuất hiện ở đây khi dựng xong." : "Chưa có video."}</div>;
   }
   const copyPart = async (textFile: string, what: string) => {
@@ -168,36 +165,59 @@ function ResultTab({ job }: { job: Job }) {
     if (text === null) return toast("error", "Không tải được lời đọc");
     await copyText(text, toast, `lời đọc ${what}`);
   };
-  const videos = [
-    ...job.parts.map((p) => ({ ...p, label: `Phần ${p.index}/${job.parts.length}`, what: `phần ${p.index}`, download: `${job.title} - Phan ${p.index}.mp4` })),
-    ...(job.fullVideo ? [{ ...job.fullVideo, label: "Bản đầy đủ (không cắt)", what: "bản đầy đủ", download: `${job.title} - Day du.mp4` }] : []),
-  ];
+  const several = job.outputs.length > 1;
   return (
-    <div className="parts">
-      {videos.map((v) => (
-        <div className="part" key={v.file}>
-          <video
-            src={jobFileUrl(job.id, `parts/${v.file}`)} controls preload="metadata"
-            className={job.settings.format === "tiktok" ? "tall" : undefined}
-          />
-          <div className="part-meta">
-            <div>
-              <b>{v.label}</b>
-              <div className="small muted">
-                {formatDuration(v.durationSec)}{v.sizeBytes ? ` · ${formatBytes(v.sizeBytes)}` : ""}
-              </div>
+    <>
+      {job.outputs.map((o) => {
+        const name = VIDEO_FORMATS[o.format].label;
+        // File names say the format only when there is more than one.
+        const prefix = several ? `${job.title} - ${name}` : job.title;
+        const videos = [
+          ...o.parts.map((p) => ({ ...p, label: `Phần ${p.index}/${o.parts.length}`, what: `phần ${p.index}`, download: `${prefix} - Phan ${p.index}.mp4` })),
+          ...(o.fullVideo ? [{
+            ...o.fullVideo,
+            label: o.parts.length ? "Bản đầy đủ (không cắt)" : "Cả truyện, không chia phần",
+            what: "bản đầy đủ",
+            download: o.parts.length ? `${prefix} - Day du.mp4` : `${prefix}.mp4`,
+          }] : []),
+        ];
+        return (
+          <section key={o.format}>
+            {several && (
+              <h3 className="output-head">
+                {name}
+                <span className="small muted">{o.parts.length ? `${o.parts.length} phần${o.fullVideo ? " + bản đầy đủ" : ""}` : "1 video dài"}</span>
+              </h3>
+            )}
+            <div className="parts">
+              {videos.map((v) => (
+                <div className="part" key={v.file}>
+                  <video
+                    src={jobFileUrl(job.id, `parts/${v.file}`)} controls preload="metadata"
+                    className={o.format === "tiktok" ? "tall" : undefined}
+                  />
+                  <div className="part-meta">
+                    <div>
+                      <b>{v.label}</b>
+                      <div className="small muted">
+                        {formatDuration(v.durationSec)}{v.sizeBytes ? ` · ${formatBytes(v.sizeBytes)}` : ""}
+                      </div>
+                    </div>
+                    <span className="spacer" />
+                    <button className="icon-btn" title="Sao chép lời đọc" aria-label="Sao chép lời đọc" onClick={() => copyPart(v.textFile, v.what)}>
+                      <Copy size={15} />
+                    </button>
+                    <a className="btn small primary" href={jobFileUrl(job.id, `parts/${v.file}`)} download={v.download}>
+                      <Download size={14} /> Tải về
+                    </a>
+                  </div>
+                </div>
+              ))}
             </div>
-            <span className="spacer" />
-            <button className="icon-btn" title="Sao chép lời đọc" aria-label="Sao chép lời đọc" onClick={() => copyPart(v.textFile, v.what)}>
-              <Copy size={15} />
-            </button>
-            <a className="btn small primary" href={jobFileUrl(job.id, `parts/${v.file}`)} download={v.download}>
-              <Download size={14} /> Tải về
-            </a>
-          </div>
-        </div>
-      ))}
-    </div>
+          </section>
+        );
+      })}
+    </>
   );
 }
 
@@ -271,7 +291,7 @@ function SettingsTab({ job, busy, onApply, onRerunFrom }: {
   const set = (patch: Partial<JobSettings>) => setDraft((d) => ({ ...d, ...patch }));
   const changeStep = stepForChange(job, draft);
   const locked = isActive(job);
-  const speechSec = job.parts.length ? job.parts.reduce((s, p) => s + p.durationSec, 0) : job.sourceDurationSec;
+  const speechSec = job.outputs.length ? renderedSec(job.outputs) : job.sourceDurationSec;
 
   return (
     <div className="settings-tab">
@@ -380,7 +400,8 @@ export function JobDetailPage() {
   }, "Đã duyệt, bắt đầu tạo giọng đọc");
 
   const tabs: [Tab, string, number | null][] = [
-    ["result", "Kết quả", job.parts.length + (job.fullVideo ? 1 : 0) || null],
+    ["result", "Kết quả", videoCount(job.outputs) || null],
+    ["publish", "Đăng bài", null],
     ["script", "Kịch bản", null],
     ["transcript", job.sourceTopic ? "Chủ đề" : "Bản gốc", null],
     ["log", "Nhật ký", problems || null],
@@ -447,6 +468,13 @@ export function JobDetailPage() {
         </div>
 
         {currentTab === "result" && <ResultTab job={job} />}
+
+        {currentTab === "publish" && (
+          <PublishTab
+            job={job} busy={busy}
+            onRegenerate={() => act(() => api.rerun(job.id, "publish"), "Đang tạo lại gợi ý đăng bài")}
+          />
+        )}
 
         {currentTab === "script" && (
           <ScriptTab

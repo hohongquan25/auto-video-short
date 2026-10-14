@@ -4,7 +4,7 @@ import {
   CircleAlert, CircleCheck, ClipboardCheck, Clock, Film, Hourglass, Plus, RotateCcw, Search, Square,
 } from "lucide-react";
 import { api, type Job, type JobStatus } from "../api";
-import { STEP_LABELS, formatDuration, formatRelative, formatSpan } from "../format";
+import { STEP_LABELS, VIDEO_FORMATS, formatDuration, formatRelative, formatSpan, renderedSec, videoCount } from "../format";
 import { isActive, jobSteps, stepEta, useNow } from "../jobState";
 import { MiniPipeline, STEP_ICONS, StatusBadge } from "../components/JobStatus";
 import { SetupGuide } from "../components/SystemStatus";
@@ -48,8 +48,8 @@ function JobSummary({ job, now }: { job: Job; now: number }) {
   if (job.status === "queued") return <div className="job-line muted">Đang chờ trong hàng đợi…</div>;
   if (job.status === "waiting_review") return <div className="job-line warn-text">Kịch bản đã sẵn sàng, đang chờ bạn duyệt</div>;
   if (job.status === "failed") return <div className="job-line danger-text clamp-1">{job.error?.split("\n")[0]}</div>;
-  const total = job.parts.reduce((s, p) => s + p.durationSec, 0);
-  return <div className="job-line"><Film size={14} /> {job.parts.length} video · tổng {formatDuration(total)}</div>;
+  const formats = job.outputs.length > 1 ? ` (${job.outputs.map((o) => VIDEO_FORMATS[o.format].label).join(" + ")})` : "";
+  return <div className="job-line"><Film size={14} /> {videoCount(job.outputs)} video{formats} · dài {formatDuration(renderedSec(job.outputs))}</div>;
 }
 
 export function JobsPage() {
@@ -135,7 +135,7 @@ export function JobsPage() {
                     <button className="primary" onClick={(e) => act(e, () => api.rerun(job.id), "Đã cho chạy lại")}><RotateCcw size={14} /> Thử lại</button>
                   )}
                   {job.status === "waiting_review" && <span className="btn primary">Duyệt ngay</span>}
-                  {job.status === "done" && <span className="btn">Xem {job.parts.length} video</span>}
+                  {job.status === "done" && <span className="btn">Xem {videoCount(job.outputs)} video</span>}
                 </div>
               </div>
             ))}

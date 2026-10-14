@@ -2,7 +2,7 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, readdir
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { paths } from "./config.js";
-import type { Background, Brand, Job, Style } from "./types.js";
+import type { Background, Brand, DefaultSettings, FullVideo, Job, JobPart, Style, VideoFormat } from "./types.js";
 
 const ID_RE = /^[a-z0-9-]{4,64}$/;
 
@@ -76,7 +76,12 @@ export function saveJob(job: Job): void {
 
 /** Fill in fields added after a job file was first written. */
 function migrateJob(job: Job): Job {
-  const legacy = job as Job & { log: (Job["log"][number] | string)[] };
+  const legacy = job as Job & {
+    log: (Job["log"][number] | string)[];
+    settings: { format?: VideoFormat; backgroundId?: string };
+    parts?: JobPart[];
+    fullVideo?: FullVideo | null;
+  };
   job.log = legacy.log.map((e) => (typeof e === "string" ? { at: "", level: "info", step: null, msg: e } : e));
   job.timings ??= {};
   job.detail ??= null;
@@ -84,9 +89,21 @@ function migrateJob(job: Job): Job {
   job.settings.aiProvider ??= "gemini";
   job.settings.subtitles ??= false;
   job.settings.fullVideo ??= false;
-  job.settings.format ??= "original";
+  job.settings.formats ??= [legacy.settings.format ?? "original"];
+  delete legacy.settings.format;
   job.settings.fit ??= "blur";
-  job.fullVideo ??= null;
+  // Jobs from before several backgrounds had exactly one.
+  job.settings.backgroundIds ??= legacy.settings.backgroundId ? [legacy.settings.backgroundId] : [];
+  delete legacy.settings.backgroundId;
+  // Jobs from before several formats kept their one set of videos at the top of the parts folder.
+  if (!job.outputs) {
+    const parts = legacy.parts ?? [];
+    const fullVideo = legacy.fullVideo ?? null;
+    job.outputs = parts.length || fullVideo ? [{ format: job.settings.formats[0], parts, fullVideo }] : [];
+  }
+  job.publish ??= null;
+  delete legacy.parts;
+  delete legacy.fullVideo;
   job.callbackUrl ??= null;
   job.sourceUrl ??= null;
   job.sourceInfo ??= null;
@@ -152,4 +169,15 @@ export function getBrand(): Brand {
 
 export function saveBrand(brand: Brand): void {
   writeJson(paths.brandFile, brand);
+}
+
+// ── Default job settings ────────────────────────────────────────────────────
+
+/** The defaults the user saved, or null while the built-in ones apply. */
+export function getSavedDefaults(): DefaultSettings | null {
+  return readJson<DefaultSettings | null>(paths.defaultsFile, null);
+}
+
+export function saveDefaults(defaults: DefaultSettings): void {
+  writeJson(paths.defaultsFile, defaults);
 }

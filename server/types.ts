@@ -1,4 +1,4 @@
-export const STEPS = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render"] as const;
+export const STEPS = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish"] as const;
 export type Step = (typeof STEPS)[number];
 
 export const STEP_LABELS: Record<Step, string> = {
@@ -10,6 +10,7 @@ export const STEP_LABELS: Record<Step, string> = {
   review: "Duyệt kịch bản",
   tts: "Tạo giọng đọc",
   render: "Dựng video",
+  publish: "Gợi ý đăng bài",
 };
 
 export type AiProvider = "claude" | "gemini";
@@ -29,6 +30,18 @@ export const VIDEO_FORMATS: Record<VideoFormat, { label: string; desc: string; s
   youtube: { label: "YouTube", desc: "Ngang 16:9 · 1920×1080", size: { width: 1920, height: 1080 } },
 };
 
+/** The order formats are rendered and listed in. */
+export const FORMAT_ORDER: VideoFormat[] = ["tiktok", "youtube", "original"];
+
+/**
+ * How each chosen format is cut. Next to TikTok's short parts, YouTube gets
+ * the whole story as one long video instead of parts of its own.
+ */
+export function formatPlan(formats: VideoFormat[]): { format: VideoFormat; whole: boolean }[] {
+  return FORMAT_ORDER.filter((f) => formats.includes(f))
+    .map((format) => ({ format, whole: format === "youtube" && formats.includes("tiktok") }));
+}
+
 export type JobStatus = "queued" | "running" | "waiting_review" | "failed" | "done";
 
 export interface JobSettings {
@@ -37,18 +50,42 @@ export interface JobSettings {
   aiProvider: AiProvider;
   voice: string;
   rate: string;
-  backgroundId: string;
+  /** Library videos to cut the backgrounds from, in a random order; at least one. */
+  backgroundIds: string[];
   reviewBeforeTts: boolean;
   /** Burn the narration as subtitles into each video. */
   subtitles: boolean;
   /** Also join the parts into one uncut video. */
   fullVideo: boolean;
-  /** Output frame for the target platform. */
-  format: VideoFormat;
+  /** Output frames, one set of videos per platform. */
+  formats: VideoFormat[];
   fit: FitMode;
   minPartSec: number;
   maxPartSec: number;
 }
+
+/** What a new job starts from. Backgrounds are left out: a new job uses the whole library. */
+export type DefaultSettings = Omit<JobSettings, "backgroundIds">;
+
+/**
+ * Defaults until the user saves their own. The style is not fixed here: it
+ * is the first style that rewrites with AI.
+ */
+export const BUILTIN_DEFAULTS: Omit<DefaultSettings, "styleId"> = {
+  aiProvider: "claude",
+  voice: "olvroc:Ngọc Huyền",
+  rate: "+0%",
+  reviewBeforeTts: false,
+  subtitles: true,
+  fullVideo: true,
+  formats: ["original"],
+  fit: "blur",
+  minPartSec: 120,
+  maxPartSec: 300,
+};
+
+/** Stand-in voice when the default OlvRoc voice is not installed. */
+export const FALLBACK_VOICE = "vi-VN-HoaiMyNeural";
 
 export interface JobPart {
   index: number;
@@ -56,9 +93,69 @@ export interface JobPart {
   durationSec: number;
   textFile: string;
   sizeBytes?: number;
+  /** Cover image (JPG) next to the video, made by the publish step. */
+  cover?: string;
 }
 
 export type FullVideo = Omit<JobPart, "index">;
+
+/** The videos rendered for one format. File names are relative to the job's parts folder. */
+export interface JobOutput {
+  format: VideoFormat;
+  /** Empty when the format gets the whole story as one video. */
+  parts: JobPart[];
+  /** The whole story in one video: the only video of a whole format, or the joined parts. */
+  fullVideo: FullVideo | null;
+}
+
+/** Suggested post texts for a finished job, written by the AI from the story. */
+export interface PublishKit {
+  /** The AI that wrote it; null when the AI failed and the texts are built from the job title. */
+  by: string | null;
+  /** The AI's read of the story's niche and of what works for similar stories. */
+  niche: { genre: string; audience: string; similar: string[]; insight: string } | null;
+  /** Alternative post titles, best first. */
+  titles: string[];
+  /** A few punchy words printed on the covers. */
+  coverText: string;
+  /** Post description, without hashtags. */
+  caption: string;
+  /** Each starting with "#". */
+  hashtags: string[];
+  /** One teaser line per part of the split formats. */
+  partHooks: string[];
+  /** Only when YouTube is one of the formats. */
+  youtube: { title: string; description: string; tags: string[] } | null;
+}
+
+/** What to fill in when posting one video. */
+export interface PostSuggestion {
+  /** Null where the platform has only a description (TikTok), which then starts with the title. */
+  title: string | null;
+  description: string;
+  tags: string[];
+}
+
+/** The post for one video of `format`; `part` is null for a video holding the whole story. */
+export function postFor(kit: PublishKit, format: VideoFormat, part: { index: number; total: number } | null): PostSuggestion {
+  const suffix = part ? ` | Phần ${part.index}/${part.total}` : "";
+  if (format === "youtube" && kit.youtube) {
+    return { title: kit.youtube.title + suffix, description: kit.youtube.description, tags: kit.youtube.tags };
+  }
+  const title = (kit.titles[0] ?? "") + (part ? suffix : " (trọn bộ)");
+  const hook = (part && kit.partHooks[part.index - 1]) || kit.caption;
+  return { title: null, description: [title, hook, kit.hashtags.join(" ")].filter(Boolean).join("\n\n"), tags: [] };
+}
+
+export const videoCount = (outputs: JobOutput[]): number =>
+  outputs.reduce((n, o) => n + o.parts.length + (o.fullVideo ? 1 : 0), 0);
+
+/** Length of the rendered story, the same in every format. */
+export function renderedSec(outputs: JobOutput[]): number {
+  const o = outputs[0];
+  if (!o) return 0;
+  return o.parts.length ? o.parts.reduce((s, p) => s + p.durationSec, 0) : o.fullVideo?.durationSec ?? 0;
+}
 
 export type LogLevel = "info" | "success" | "warn" | "error";
 
@@ -97,9 +194,10 @@ export interface Job {
   error: string | null;
   settings: JobSettings;
   reviewApproved: boolean;
-  parts: JobPart[];
-  /** All parts joined into one video; null when not wanted or there is only one part. */
-  fullVideo: FullVideo | null;
+  /** One entry per chosen format, in FORMAT_ORDER. */
+  outputs: JobOutput[];
+  /** Post suggestions, made after the videos; null until then. */
+  publish: PublishKit | null;
   log: LogEntry[];
   /** Webhook for this job's status changes (e.g. an n8n Webhook node), on top of WEBHOOK_URL. */
   callbackUrl: string | null;
@@ -161,7 +259,22 @@ export interface Background {
   file: string;
   durationSec: number;
   createdAt: string;
+  /** Mirror the picture left to right in rendered videos. The file itself is never changed. */
+  mirror?: boolean;
+  /** Shift the colours slightly (RECOLOR) in rendered videos. */
+  recolor?: boolean;
+  /** Play the background faster in rendered videos, one of BACKGROUND_SPEEDS (1 when unset). */
+  speed?: number;
 }
+
+/** How a background's picture is altered when it is rendered. */
+export type BackgroundLook = Pick<Background, "mirror" | "recolor" | "speed">;
+
+/** The speeds a background can be fast-forwarded to, cycled through by its button in the library. */
+export const BACKGROUND_SPEEDS = [1, 1.25, 1.5, 2];
+
+/** The "recolor" shift, applied by ffmpeg and copied by the CSS preview in the library. */
+export const RECOLOR = { hueDeg: 12, saturation: 1.15, contrast: 1.05 };
 
 export type TtsProvider = "edge" | "olvroc";
 

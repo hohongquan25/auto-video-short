@@ -95,4 +95,5 @@ export const paths = {
   stylesFile: join(config.dataDir, "styles.json"),
   backgroundsFile: join(config.dataDir, "backgrounds.json"),
   brandFile: join(config.dataDir, "brand.json"),
+  defaultsFile: join(config.dataDir, "defaults.json"),
 };

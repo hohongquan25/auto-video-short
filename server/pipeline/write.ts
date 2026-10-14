@@ -25,13 +25,15 @@ const outlineSchema = z.object({
 });
 type Outline = z.infer<typeof outlineSchema>;
 
-/** Parse the outline JSON, tolerating a code fence or a sentence around it. */
-export function parseOutline(text: string): Outline {
+/** The JSON object in an AI reply, tolerating a code fence or a sentence around it. */
+export function jsonObject(text: string, what: string): unknown {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("AI không trả về dàn ý dạng JSON");
-  return outlineSchema.parse(JSON.parse(text.slice(start, end + 1)));
+  if (start < 0 || end <= start) throw new Error(`AI không trả về ${what} dạng JSON`);
+  return JSON.parse(text.slice(start, end + 1));
 }
+
+export const parseOutline = (text: string): Outline => outlineSchema.parse(jsonObject(text, "dàn ý"));
 
 /** Characters of narration that last `minutes` at the voice `rate`. */
 export function charsForMinutes(minutes: number, rate: string): number {

@@ -51,18 +51,25 @@ export interface Writer {
   write: (prompt: string) => Promise<string>;
 }
 
-function geminiWriter(systemInstruction: string, signal: AbortSignal): Writer {
+/** With `webSearch` the AI may search the web before it answers (Claude's WebSearch, Gemini's Google Search). */
+export interface WriterOptions {
+  webSearch?: boolean;
+}
+
+const searchLabel = (opts: WriterOptions) => (opts.webSearch ? " + tìm web" : "");
+
+function geminiWriter(systemInstruction: string, signal: AbortSignal, opts: WriterOptions): Writer {
   if (!config.geminiApiKey) {
     throw new FatalAiError("Chưa cấu hình GEMINI_API_KEY trong .env.local (lấy key miễn phí tại https://aistudio.google.com/apikey), hoặc chuyển sang dùng Claude");
   }
   const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
   return {
-    name: `Gemini (${config.geminiModel})`,
+    name: `Gemini (${config.geminiModel})${searchLabel(opts)}`,
     write: async (prompt) => {
       const res = await ai.models.generateContent({
         model: config.geminiModel,
         contents: prompt,
-        config: { systemInstruction, temperature: 0.8, abortSignal: signal },
+        config: { systemInstruction, temperature: 0.8, abortSignal: signal, ...(opts.webSearch ? { tools: [{ googleSearch: {} }] } : {}) },
       });
       const out = res.text?.trim();
       if (!out) throw new Error("Gemini trả về kết quả rỗng (có thể bị bộ lọc nội dung chặn)");
@@ -71,15 +78,15 @@ function geminiWriter(systemInstruction: string, signal: AbortSignal): Writer {
   };
 }
 
-function claudeWriter(systemInstruction: string, signal: AbortSignal): Writer {
+function claudeWriter(systemInstruction: string, signal: AbortSignal, opts: WriterOptions): Writer {
   return {
-    name: `Claude (${config.claudeModel}, qua Claude Code)`,
-    write: (prompt) => claudeComplete(prompt, systemInstruction, signal),
+    name: `Claude (${config.claudeModel}, qua Claude Code)${searchLabel(opts)}`,
+    write: (prompt) => claudeComplete(prompt, systemInstruction, signal, opts),
   };
 }
 
-export const makeWriter = (provider: AiProvider, systemInstruction: string, signal: AbortSignal): Writer =>
-  provider === "claude" ? claudeWriter(systemInstruction, signal) : geminiWriter(systemInstruction, signal);
+export const makeWriter = (provider: AiProvider, systemInstruction: string, signal: AbortSignal, opts: WriterOptions = {}): Writer =>
+  provider === "claude" ? claudeWriter(systemInstruction, signal, opts) : geminiWriter(systemInstruction, signal, opts);
 
 /**
  * Rewrite the transcript chunk by chunk. Each finished chunk is cached on

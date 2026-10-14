@@ -16,6 +16,9 @@ export function formatBytes(bytes: number): string {
 
 export const formatChars = (n: number) => n.toLocaleString("vi-VN");
 
+/** A playback speed such as "1,25×". */
+export const formatSpeed = (speed: number) => `${speed.toLocaleString("vi-VN")}×`;
+
 /** Measured Edge TTS Vietnamese speaking speed at rate +0%. */
 export const TTS_CHARS_PER_SEC = 14;
 

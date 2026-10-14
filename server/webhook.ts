@@ -1,23 +1,30 @@
 import { config } from "./config.js";
-import type { Job, LogLevel } from "./types.js";
+import { postFor, type FullVideo, type Job, type LogLevel, type VideoFormat } from "./types.js";
 
 /** Absolute links to a job's page and output files, for tools outside the browser. */
 export function jobLinks(job: Job) {
   const base = config.publicUrl;
+  const file = (name: string) => `${base}/files/jobs/${job.id}/parts/${name}`;
+  const video = (v: FullVideo, format: VideoFormat, part: { index: number; total: number } | null) => ({
+    durationSec: v.durationSec,
+    video: file(v.file),
+    text: file(v.textFile),
+    cover: v.cover ? file(v.cover) : null,
+    // Title, description and tags to paste when posting this video.
+    post: job.publish ? postFor(job.publish, format, part) : null,
+  });
+  const outputs = job.outputs.map((o) => ({
+    format: o.format,
+    parts: o.parts.map((p) => ({ index: p.index, ...video(p, o.format, { index: p.index, total: o.parts.length }) })),
+    full: o.fullVideo && video(o.fullVideo, o.format, null),
+  }));
   return {
     page: `${base}/jobs/${job.id}`,
     api: `${base}/api/jobs/${job.id}`,
-    parts: job.parts.map((p) => ({
-      index: p.index,
-      durationSec: p.durationSec,
-      video: `${base}/files/jobs/${job.id}/parts/${p.file}`,
-      text: `${base}/files/jobs/${job.id}/parts/${p.textFile}`,
-    })),
-    full: job.fullVideo && {
-      durationSec: job.fullVideo.durationSec,
-      video: `${base}/files/jobs/${job.id}/parts/${job.fullVideo.file}`,
-      text: `${base}/files/jobs/${job.id}/parts/${job.fullVideo.textFile}`,
-    },
+    outputs,
+    // The first format's videos, where workflows built for a single format look for them.
+    parts: outputs[0]?.parts ?? [],
+    full: outputs[0]?.full ?? null,
   };
 }
 
@@ -66,8 +73,8 @@ export async function notifyWebhooks(job: Job, log: (msg: string, level?: LogLev
       sourceUrl: job.sourceUrl,
       sourceTopic: job.sourceTopic,
       settings: job.settings,
-      parts: job.parts,
-      fullVideo: job.fullVideo,
+      outputs: job.outputs,
+      publish: job.publish,
     },
     links: jobLinks(job),
   });

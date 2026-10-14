@@ -7,7 +7,7 @@ import { z } from "zod";
 import { config, paths } from "./config.js";
 import {
   deleteJob, ensureDataDirs, getBackground, getBrand, getStyle, isValidId, jobDir, listBackgrounds,
-  listJobs, listStyles, newId, saveBackgrounds, saveBrand, saveJob, saveStyles,
+  getSavedDefaults, listJobs, listStyles, newId, saveBackgrounds, saveBrand, saveDefaults, saveJob, saveStyles,
 } from "./store.js";
 import { cancel, enqueue, isBusy, liveJob, notify, resumeOnStartup } from "./queue.js";
 import { jobLinks } from "./webhook.js";
@@ -19,7 +19,7 @@ import { claudeStatus } from "./lib/claude.js";
 import { listOlvrocVoices, olvrocStatus, olvrocSynthesize } from "./lib/olvroc.js";
 import { probeUrl, ytdlpVersion } from "./lib/ytdlp.js";
 import {
-  EDGE_VOICES, STEPS, STEP_LABELS, OLVROC_PREFIX, voiceProvider, type Background, type Job, type SystemStatus, type Voice,
+  BACKGROUND_SPEEDS, BUILTIN_DEFAULTS, EDGE_VOICES, FALLBACK_VOICE, STEPS, STEP_LABELS, OLVROC_PREFIX, voiceProvider, type Background, type DefaultSettings, type Job, type SystemStatus, type Voice,
 } from "./types.js";
 
 ensureDataDirs();
@@ -155,7 +155,9 @@ app.get("/api/voices/preview", async (req, res) => {
 
 // ── Jobs ────────────────────────────────────────────────────────────────────
 
-const settingsSchema = z.object({
+const formatSchema = z.enum(["original", "tiktok", "youtube"]);
+
+const settingsObject = z.object({
   styleId: z.string().min(1),
   aiProvider: z.enum(["claude", "gemini"]).default("claude"),
   voice: z.string().refine(
@@ -163,15 +165,34 @@ const settingsSchema = z.object({
     "Giọng đọc không hợp lệ",
   ),
   rate: rateSchema,
-  backgroundId: z.string().min(1),
+  backgroundIds: z.array(z.string().min(1)).min(1, "Chọn ít nhất một video nền").transform((ids) => [...new Set(ids)]),
   reviewBeforeTts: z.boolean(),
   subtitles: z.boolean().default(false),
   fullVideo: z.boolean().default(false),
-  format: z.enum(["original", "tiktok", "youtube"]).default("original"),
+  formats: z.array(formatSchema).min(1, "Chọn ít nhất một định dạng xuất").default(["original"])
+    .transform((fs) => [...new Set(fs)]),
   fit: z.enum(["blur", "crop"]).default("blur"),
   minPartSec: z.number().min(10).max(3600),
   maxPartSec: z.number().min(20).max(3600),
 }).refine((s) => s.maxPartSec > s.minPartSec, { message: "Độ dài tối đa phải lớn hơn tối thiểu" });
+
+/**
+ * Older callers (n8n workflows) send one "format" instead of a "formats"
+ * list, and one "backgroundId" instead of "backgroundIds". With no
+ * background at all, the whole library is used.
+ */
+const settingsSchema = z.preprocess(
+  (raw) => {
+    if (!raw || typeof raw !== "object") return raw;
+    const s: Record<string, unknown> = { ...raw };
+    if (!("formats" in s) && "format" in s) s.formats = [s.format];
+    if (!("backgroundIds" in s)) s.backgroundIds = "backgroundId" in s ? [s.backgroundId] : listBackgrounds().map((b) => b.id);
+    delete s.format;
+    delete s.backgroundId;
+    return s;
+  },
+  settingsObject,
+);
 
 function loadJob(id: string): Job {
   const job = isValidId(id) ? liveJob(id) : null;
@@ -185,7 +206,7 @@ function assertIdle(job: Job): void {
 
 function validateSettingsRefs(s: z.infer<typeof settingsSchema>): void {
   if (!getStyle(s.styleId)) throw new HttpError(400, "Phong cách không tồn tại");
-  if (!getBackground(s.backgroundId)) throw new HttpError(400, "Video nền không tồn tại");
+  if (!s.backgroundIds.some((id) => getBackground(id))) throw new HttpError(400, "Video nền đã chọn không tồn tại");
 }
 
 /** OlvRoc ids are free text, so check them against the installed voice list. */
@@ -271,7 +292,7 @@ app.post("/api/jobs", upload.single("media"), async (req, res) => {
       id, title: title.slice(0, 200), sourceFile, sourceDurationSec: sourceInfo?.durationSec ?? null,
       sourceUrl, sourceInfo, sourceTopic, createdAt: now, updatedAt: now,
       status: "queued", step: null, progress: 0, detail: null, timings: {}, error: null,
-      settings, reviewApproved: false, parts: [], fullVideo: null, log: [], callbackUrl,
+      settings, reviewApproved: false, outputs: [], publish: null, log: [], callbackUrl,
     };
     appendLog(job, sourceUrl ? `Đã tạo job từ link ${sourceInfo!.platform}, đang chờ xử lý`
       : topic ? "Đã tạo job AI viết truyện theo chủ đề, đang chờ xử lý"
@@ -377,6 +398,36 @@ app.put("/api/brand", (req, res) => {
   res.json(brand);
 });
 
+// ── Default job settings ────────────────────────────────────────────────────
+
+/**
+ * The saved defaults, or the built-in ones: the first AI style rewritten by
+ * Claude, read by OlvRoc's Ngọc Huyền (Hoài My when OlvRoc is missing). A
+ * style deleted since it was saved falls back the same way.
+ */
+async function resolveDefaults(): Promise<DefaultSettings> {
+  const styles = listStyles();
+  const styleId = (styles.find((s) => s.prompt) ?? styles[0])?.id ?? "";
+  const saved = getSavedDefaults();
+  if (saved) return getStyle(saved.styleId) ? saved : { ...saved, styleId };
+  const installed = voiceProvider(BUILTIN_DEFAULTS.voice) !== "olvroc"
+    || (await listOlvrocVoices().catch(() => [])).some((v) => v.id === BUILTIN_DEFAULTS.voice);
+  return { ...BUILTIN_DEFAULTS, styleId, voice: installed ? BUILTIN_DEFAULTS.voice : FALLBACK_VOICE };
+}
+
+app.get("/api/defaults", async (_req, res) => {
+  res.json(await resolveDefaults());
+});
+
+app.put("/api/defaults", async (req, res) => {
+  // Same rules as a job's settings; the backgrounds are not part of the defaults.
+  const { backgroundIds: _, ...defaults } = settingsObject.parse({ ...req.body, backgroundIds: ["-"] });
+  if (!getStyle(defaults.styleId)) throw new HttpError(400, "Phong cách không tồn tại");
+  await validateOlvrocVoice(defaults.voice);
+  saveDefaults(defaults);
+  res.json(defaults);
+});
+
 app.get("/api/styles", (_req, res) => {
   res.json(listStyles());
 });
@@ -433,6 +484,20 @@ app.post("/api/backgrounds", upload.single("file"), async (req, res) => {
     if (file && existsSync(file.path)) rmSync(file.path, { force: true });
     throw err;
   }
+});
+
+app.patch("/api/backgrounds/:id", (req, res) => {
+  const patch = z.object({
+    mirror: z.boolean().optional(),
+    recolor: z.boolean().optional(),
+    speed: z.number().refine((s) => BACKGROUND_SPEEDS.includes(s), "Tốc độ không hợp lệ").optional(),
+  }).strict().parse(req.body);
+  const items = listBackgrounds();
+  const item = items.find((b) => b.id === req.params.id);
+  if (!item) throw new HttpError(404, "Video nền không tồn tại");
+  Object.assign(item, patch);
+  saveBackgrounds(items);
+  res.json(item);
 });
 
 app.delete("/api/backgrounds/:id", (req, res) => {

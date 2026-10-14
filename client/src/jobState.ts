@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Job, JobSettings, Step } from "./api";
 
-export const STEPS: Step[] = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render"];
+export const STEPS: Step[] = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish"];
 
 /** Steps that turn a recording into a script; a topic job's AI writes the script instead. */
 const MEDIA_STEPS: Step[] = ["download", "extract", "transcribe", "rewrite"];
@@ -49,6 +49,8 @@ export function totalProcessingSeconds(job: Job, now: number): number {
   return STEPS.filter((s) => s !== "review").reduce((sum, s) => sum + (stepSeconds(job, s, now) ?? 0), 0);
 }
 
+const sameSet = <T>(a: T[], b: T[]) => a.length === b.length && a.every((x) => b.includes(x));
+
 /** Earliest step whose output is invalidated by a settings change. */
 export function stepForChange(job: Job, after: JobSettings): Step | null {
   const before = job.settings;
@@ -56,11 +58,11 @@ export function stepForChange(job: Job, after: JobSettings): Step | null {
   if (before.reviewBeforeTts !== after.reviewBeforeTts && after.reviewBeforeTts) return "review";
   if (before.voice !== after.voice || before.rate !== after.rate) return "tts";
   if (
-    before.backgroundId !== after.backgroundId ||
+    !sameSet(before.backgroundIds, after.backgroundIds) ||
     before.subtitles !== after.subtitles ||
     before.fullVideo !== after.fullVideo ||
-    before.format !== after.format ||
-    (after.format !== "original" && before.fit !== after.fit) ||
+    !sameSet(before.formats, after.formats) ||
+    (after.formats.some((f) => f !== "original") && before.fit !== after.fit) ||
     before.minPartSec !== after.minPartSec ||
     before.maxPartSec !== after.maxPartSec
   ) return "render";
