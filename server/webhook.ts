@@ -1,5 +1,5 @@
 import { config } from "./config.js";
-import { postFor, type FullVideo, type Job, type LogLevel, type VideoFormat } from "./types.js";
+import { driveFileUrl, driveFolderUrl, postFor, sheetUrl, type FullVideo, type Job, type LogLevel, type VideoFormat } from "./types.js";
 
 /** Absolute links to a job's page and output files, for tools outside the browser. */
 export function jobLinks(job: Job) {
@@ -10,6 +10,12 @@ export function jobLinks(job: Job) {
     video: file(v.file),
     text: file(v.textFile),
     cover: v.cover ? file(v.cover) : null,
+    // The same video and cover on Google Drive, once the upload step has run.
+    drive: job.drive && {
+      video: job.drive.files[v.file] ? driveFileUrl(job.drive.files[v.file].id) : null,
+      videoId: job.drive.files[v.file]?.id ?? null,
+      cover: v.cover && job.drive.files[v.cover] ? driveFileUrl(job.drive.files[v.cover].id) : null,
+    },
     // Title, description and tags to paste when posting this video.
     post: job.publish ? postFor(job.publish, format, part) : null,
   });
@@ -21,6 +27,8 @@ export function jobLinks(job: Job) {
   return {
     page: `${base}/jobs/${job.id}`,
     api: `${base}/api/jobs/${job.id}`,
+    driveFolder: job.drive ? driveFolderUrl(job.drive.folderId) : null,
+    sheet: job.drive ? sheetUrl(job.drive.sheetId) : null,
     outputs,
     // The first format's videos, where workflows built for a single format look for them.
     parts: outputs[0]?.parts ?? [],
@@ -75,6 +83,7 @@ export async function notifyWebhooks(job: Job, log: (msg: string, level?: LogLev
       settings: job.settings,
       outputs: job.outputs,
       publish: job.publish,
+      drive: job.drive,
     },
     links: jobLinks(job),
   });

@@ -2,7 +2,8 @@ import type { CSSProperties } from "react";
 import { RECOLOR, type BackgroundLook, type JobStatus } from "../../server/types";
 
 export {
-  AI_PROVIDER_LABELS, BACKGROUND_SPEEDS, FORMAT_ORDER, STEP_LABELS, VIDEO_FORMATS, formatPlan, postFor, renderedSec, videoCount,
+  AI_PROVIDER_LABELS, BACKGROUND_SPEEDS, FORMAT_ORDER, STEP_LABELS, VIDEO_FORMATS, driveFolderUrl, formatPlan, postFor, renderedSec, sheetUrl,
+  videoCount,
 } from "../../server/types";
 export { TTS_CHARS_PER_SEC, estimateSpeechSec, formatBytes, formatChars, formatDuration, formatSpeed } from "../../server/lib/format";
 

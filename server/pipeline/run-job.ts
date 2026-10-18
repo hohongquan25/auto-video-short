@@ -16,6 +16,8 @@ import { writeStory } from "./write.js";
 import { synthesizeScript } from "./tts.js";
 import { renderParts } from "./render.js";
 import { preparePublish } from "./publish.js";
+import { uploadToDrive } from "./upload.js";
+import { googleConfigured } from "../lib/google.js";
 
 const LOG_LIMIT = 500;
 
@@ -332,6 +334,12 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
     brand,
     r,
   });
+
+  // ── 8. Upload (when Google is set up) ───────────────────────────────────
+  if (googleConfigured()) {
+    enter("upload", "Bắt đầu lưu video lên Google Drive và ghi vào Google Sheet");
+    await uploadToDrive(job, a.partsDir, r);
+  }
 
   endStep(job);
   job.status = "done";

@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import {
-  AudioLines, CloudDownload, Captions, Check, CircleAlert, Clapperboard, ClipboardCheck, Hourglass, LoaderCircle, Megaphone, Mic, PenLine, Sparkles,
+  AudioLines, CloudDownload, CloudUpload, Captions, Check, CircleAlert, Clapperboard, ClipboardCheck, Hourglass, LoaderCircle, Megaphone, Mic, PenLine, Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import type { Job, JobStatus, Step } from "../api";
@@ -17,6 +17,7 @@ export const STEP_ICONS: Record<Step, LucideIcon> = {
   tts: Mic,
   render: Clapperboard,
   publish: Megaphone,
+  upload: CloudUpload,
 };
 
 export function StatusBadge({ status }: { status: JobStatus }) {

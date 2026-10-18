@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, CircleAlert, Link2, CircleCheck, ClipboardCheck, Columns2, Copy, Download, FileText, Hourglass, LoaderCircle, Megaphone,
-  PartyPopper, PenLine, RotateCcw, Square, Trash2, Undo2,
+  ArrowLeft, CircleAlert, Link2, CircleCheck, ClipboardCheck, Columns2, Copy, Download, FileSpreadsheet, FileText, FolderOpen, Hourglass,
+  LoaderCircle, Megaphone, PartyPopper, PenLine, RotateCcw, Square, Trash2, Undo2,
 } from "lucide-react";
 import { api, jobFileUrl, type Job, type JobDetail, type JobSettings, type Step } from "../api";
 import {
@@ -13,8 +13,8 @@ import { LogView } from "../components/LogView";
 import { PublishTab } from "../components/PublishTab";
 import { copyText, errorMessage, useToast } from "../components/Toast";
 import {
-  AI_PROVIDER_LABELS, STEP_LABELS, VIDEO_FORMATS, estimateSpeechSec, formatBytes, formatChars, formatDate, formatDuration, formatSpan,
-  renderedSec, videoCount,
+  AI_PROVIDER_LABELS, STEP_LABELS, VIDEO_FORMATS, driveFolderUrl, estimateSpeechSec, formatBytes, formatChars, formatDate, formatDuration, formatSpan,
+  renderedSec, sheetUrl, videoCount,
 } from "../format";
 import { isActive, jobSteps, stepEta, stepForChange, stepSeconds, totalProcessingSeconds, useNow } from "../jobState";
 import { useLibrary } from "../useLibrary";
@@ -32,6 +32,7 @@ const TAB_FOR_STEP: Record<Step, Tab> = {
   tts: "log",
   render: "result",
   publish: "publish",
+  upload: "log",
 };
 
 function defaultTab(job: Job): Tab {
@@ -146,6 +147,12 @@ function StatusPanel({ job, now, busy, onRetry, onApprove, onTab }: {
         </div>
         <div className="row">
           <button onClick={() => onTab("result")}>Xem video</button>
+          {job.drive && (
+            <>
+              <a className="btn" href={driveFolderUrl(job.drive.folderId)} target="_blank" rel="noreferrer"><FolderOpen size={15} /> Drive</a>
+              <a className="btn" href={sheetUrl(job.drive.sheetId)} target="_blank" rel="noreferrer"><FileSpreadsheet size={15} /> Sheet</a>
+            </>
+          )}
           {job.publish && <button className="primary" onClick={() => onTab("publish")}><Megaphone size={15} /> Đăng bài</button>}
         </div>
       </div>

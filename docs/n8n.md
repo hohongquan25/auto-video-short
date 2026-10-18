@@ -123,3 +123,92 @@ Muốn mọi job (kể cả job tạo từ giao diện) đều báo về một w
 | Dừng / xoá | `POST /api/jobs/{id}/stop` / `DELETE /api/jobs/{id}` |
 
 Webhook bị lỗi (n8n tắt…) được thử lại 3 lần rồi ghi cảnh báo vào nhật ký job. Job vẫn hoàn thành bình thường.
+
+## 4. Tự lưu video lên Google Drive và Google Sheet
+
+Khi đã cấu hình Google, mỗi job chạy thêm bước cuối **"Lưu lên Drive"** sau bước gợi ý đăng bài:
+
+1. Tạo một thư mục con `<tên truyện> · <id job>` trong thư mục Drive gốc, tải lên mọi video và ảnh bìa (`tiktok-part-01.mp4`, `tiktok-part-01.jpg`, `youtube-full.mp4`…).
+2. Ghi **mỗi video một dòng** vào Google Sheet với `status = pending`.
+
+n8n không cần gọi vào Story Studio nữa: chỉ cần đọc Sheet theo lịch, đăng những dòng `pending` rồi đổi trạng thái. Máy chạy n8n cũng không cần thấy máy chạy Story Studio.
+
+### Cấu hình
+
+**Cách 1: tài khoản Google của bạn (OAuth, dùng được với Gmail thường)**
+
+1. Vào [Google Cloud Console](https://console.cloud.google.com/), tạo (hoặc chọn) một project.
+2. **APIs & Services → Library**: bật **Google Drive API** và **Google Sheets API**.
+3. **OAuth consent screen**: User type **External**, điền tên app và email. Ở mục Audience/Publishing status bấm **Publish app** (chuyển sang *In production*). Nếu để *Testing*, Google sẽ huỷ kết nối sau 7 ngày. App chưa xác minh vẫn dùng bình thường, Google chỉ hiện cảnh báo "Google hasn't verified this app": bấm **Advanced → Go to … (unsafe)**.
+4. **Credentials → Create credentials → OAuth client ID**, loại **Desktop app**. Chép Client ID và Client secret vào `.env.local`:
+
+   ```env
+   GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-xxxx
+   # Tuỳ chọn: dán link/id thư mục và bảng tính có sẵn. Để trống thì tự tạo.
+   GOOGLE_DRIVE_FOLDER_ID=
+   GOOGLE_SHEET_ID=
+   ```
+
+5. Khởi động lại server, mở giao diện **trên chính máy chạy server**, bấm **Google Drive & Sheet** ở khung Hệ thống (hoặc nút **Kết nối Google**) rồi đăng nhập tài khoản sẽ chứa video. Đổi tài khoản: bấm lại, chọn tài khoản khác.
+
+**Cách 2: service account (Google Workspace có Shared Drive)**
+
+Service account không có dung lượng Drive riêng nên chỉ tải lên được **Shared Drive**.
+
+1. Bật Drive API và Sheets API như trên, tạo **Service account**, tạo khoá **JSON** và lưu file vào máy (ví dụ `secrets/google-sa.json`, đừng commit).
+2. Thêm email service account (`...@...iam.gserviceaccount.com`) làm thành viên quyền **Content manager** của Shared Drive, và chia sẻ quyền **Editor** của bảng tính cho email đó.
+3. Trong `.env.local`:
+
+   ```env
+   GOOGLE_SERVICE_ACCOUNT_FILE=secrets/google-sa.json
+   GOOGLE_DRIVE_FOLDER_ID=https://drive.google.com/drive/folders/<id thư mục trong Shared Drive>
+   GOOGLE_SHEET_ID=https://docs.google.com/spreadsheets/d/<id bảng tính>/edit
+   ```
+
+Khung Hệ thống báo xanh ở **Google Drive & Sheet** là đã sẵn sàng; nếu đỏ thì di chuột vào để xem lỗi (sai id, chưa chia sẻ quyền…).
+
+### Các cột trong Sheet
+
+Mỗi dòng là một video. Dòng tiêu đề được tạo tự động ở tab `GOOGLE_SHEET_TAB` (mặc định `Videos`).
+
+| Cột | Ý nghĩa |
+|---|---|
+| `id` | Mã duy nhất của video, ví dụ `20261015-101010-abcdef-tiktok-p01`. Dùng làm khoá khi n8n cập nhật dòng |
+| `uploaded_at` | Thời điểm tải lên (ISO, giờ UTC) |
+| `job_id`, `title` | Job và tên truyện |
+| `format` | `tiktok`, `youtube` hoặc `original` |
+| `kind` | `part` (một phần) hoặc `full` (cả truyện) |
+| `part`, `total_parts` | Phần thứ mấy trên tổng số phần (trống với `full`) |
+| `duration_sec` | Độ dài video (giây) |
+| `video_file_id`, `video_url` | Id và link Drive của video. n8n tải file bằng id này |
+| `cover_file_id`, `cover_url` | Ảnh bìa |
+| `post_title` | Tiêu đề khi đăng (YouTube). TikTok để trống vì tiêu đề nằm trong mô tả |
+| `post_description` | Mô tả để dán khi đăng. Với TikTok đã gồm tiêu đề, câu nhử và hashtag |
+| `tags` | Thẻ YouTube, cách nhau bằng dấu phẩy |
+| `hashtags` | Hashtag của truyện |
+| `folder_url` | Thư mục Drive của job |
+| `status` | `pending` khi mới thêm. **n8n quản lý** từ cột này trở đi |
+| `scheduled_at` | Để trống; bạn hoặc n8n điền giờ muốn đăng |
+| `posted_at`, `post_url`, `note` | Để n8n ghi lại sau khi đăng |
+
+Story Studio **không bao giờ ghi đè** các cột từ `status` trở đi của một dòng đã có. Chạy lại job (ví dụ "Tạo lại gợi ý") chỉ cập nhật các cột phía trước và thay nội dung file trên Drive (giữ nguyên id và link). Nếu dựng lại khiến số phần thay đổi, video thừa được chuyển vào thùng rác Drive và dòng của nó (nếu còn `pending`) đổi thành `removed`.
+
+Job cũ (làm trước khi cấu hình Google) có thể đẩy lên bằng cách chạy lại từ bước **Lưu lên Drive** ở tab Cài đặt của job, hoặc `POST /api/jobs/{id}/rerun` với `{"fromStep": "upload"}`.
+
+Webhook `job.done` cũng có thêm thông tin Drive: `job.drive`, `links.driveFolder`, `links.sheet`, và mỗi video trong `links.outputs` có `drive: { video, videoId, cover }`.
+
+### Workflow n8n mẫu: đăng video theo lịch
+
+```
+[Schedule Trigger] → [Google Sheets: Get row(s)] → [Limit 1] → [Google Drive: Download] → [Đăng lên nền tảng] → [Google Sheets: Update row]
+```
+
+1. **Schedule Trigger**: ví dụ mỗi 3 giờ.
+2. **Google Sheets → Get row(s) in sheet**: chọn bảng tính và tab `Videos`, Filters: `status` = `pending` (thêm `format` = `tiktok` nếu workflow này chỉ đăng TikTok). Nếu dùng `scheduled_at`, thêm node **Filter** giữ dòng có `scheduled_at` trống hoặc `{{ DateTime.fromISO($json.scheduled_at) <= $now }}`.
+3. **Limit**: Max Items = 1 (mỗi lần chạy đăng một video). Muốn đăng đúng thứ tự phần, đặt node **Sort** theo `job_id`, `part` trước Limit.
+4. **Google Drive → Download file**: File = By ID `{{ $json.video_file_id }}`. Ra dữ liệu nhị phân `data`.
+5. **Đăng**: node YouTube (**Upload a video**: Title `{{ $('Limit').item.json.post_title }}`, Description `post_description`, Tags `tags`), hoặc HTTP Request tới API của TikTok/Facebook với file nhị phân và `post_description` làm caption.
+6. **Google Sheets → Update row in sheet**: Column to match on = `id`, giá trị `{{ $('Limit').item.json.id }}`; đặt `status` = `posted`, `posted_at` = `{{ $now.toISO() }}`, `post_url` = link bài vừa đăng. Nên thêm nhánh lỗi (Settings → On Error → Continue (using error output)) ghi `status` = `error` và `note` = thông báo lỗi để lần sau không đăng lại mãi.
+
+Credential **Google Sheets OAuth2** và **Google Drive OAuth2** của n8n cần dùng tài khoản có quyền xem thư mục và sửa bảng tính (cách 1: chính tài khoản đã kết nối; cách 2: tài khoản là thành viên Shared Drive).

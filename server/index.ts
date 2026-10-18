@@ -1,7 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { extname, join } from "node:path";
 import { z } from "zod";
 import { config, paths } from "./config.js";
@@ -18,6 +18,7 @@ import { run } from "./lib/proc.js";
 import { claudeStatus } from "./lib/claude.js";
 import { listOlvrocVoices, olvrocStatus, olvrocSynthesize } from "./lib/olvroc.js";
 import { probeUrl, ytdlpVersion } from "./lib/ytdlp.js";
+import { finishOauth, googleConfigured, googleStatus, oauthUrl } from "./lib/google.js";
 import {
   BACKGROUND_SPEEDS, BUILTIN_DEFAULTS, EDGE_VOICES, FALLBACK_VOICE, STEPS, STEP_LABELS, OLVROC_PREFIX, voiceProvider, type Background, type DefaultSettings, type Job, type SystemStatus, type Voice,
 } from "./types.js";
@@ -83,6 +84,7 @@ async function checkSystem(): Promise<SystemStatus> {
   ]);
   const olvroc = await olvrocStatus(true);
   const ytdlpVer = await ytdlpVersion().catch(() => null);
+  const google = await googleStatus();
   return {
     ffmpeg,
     whisper,
@@ -94,6 +96,7 @@ async function checkSystem(): Promise<SystemStatus> {
       version: ytdlpVer,
       cookies: config.ytdlpCookies ? "file cookies.txt" : config.ytdlpCookiesFromBrowser ? `trình duyệt ${config.ytdlpCookiesFromBrowser}` : null,
     },
+    google,
   };
 }
 
@@ -292,7 +295,7 @@ app.post("/api/jobs", upload.single("media"), async (req, res) => {
       id, title: title.slice(0, 200), sourceFile, sourceDurationSec: sourceInfo?.durationSec ?? null,
       sourceUrl, sourceInfo, sourceTopic, createdAt: now, updatedAt: now,
       status: "queued", step: null, progress: 0, detail: null, timings: {}, error: null,
-      settings, reviewApproved: false, outputs: [], publish: null, log: [], callbackUrl,
+      settings, reviewApproved: false, outputs: [], publish: null, log: [], callbackUrl, drive: null,
     };
     appendLog(job, sourceUrl ? `Đã tạo job từ link ${sourceInfo!.platform}, đang chờ xử lý`
       : topic ? "Đã tạo job AI viết truyện theo chủ đề, đang chờ xử lý"
@@ -341,6 +344,9 @@ app.post("/api/jobs/:id/rerun", async (req, res) => {
   if (body.settings) {
     validateSettingsRefs(body.settings);
     job.settings = body.settings;
+  }
+  if (body.fromStep === "upload" && !googleConfigured()) {
+    throw new HttpError(400, "Chưa cấu hình Google Drive (xem mục Google Drive trong .env.example)");
   }
   if (body.fromStep) resetFromStep(job, body.fromStep);
   job.status = "queued";
@@ -508,6 +514,43 @@ app.delete("/api/backgrounds/:id", (req, res) => {
     saveBackgrounds(items.filter((b) => b.id !== item.id));
   }
   res.status(204).end();
+});
+
+// ── Google account ──────────────────────────────────────────────────────────
+
+/** Pending "Connect Google" attempts: state → the page to go back to. */
+const oauthReturns = new Map<string, string>();
+
+/** Only pages on this machine, so the callback cannot be turned into an open redirect. */
+function localPage(url: string | undefined): string {
+  try {
+    const u = new URL(url ?? "");
+    if (["localhost", "127.0.0.1", "[::1]"].includes(u.hostname)) return u.href;
+  } catch {
+    // no or bad Referer
+  }
+  return "/";
+}
+
+app.get("/api/google/connect", (req, res) => {
+  const state = randomBytes(16).toString("hex");
+  const url = oauthUrl(state);
+  oauthReturns.set(state, localPage(req.get("referer")));
+  res.redirect(url);
+});
+
+app.get("/api/google/callback", async (req, res) => {
+  const { code, state, error } = z.object({
+    code: z.string().optional(), state: z.string().default(""), error: z.string().optional(),
+  }).parse(req.query);
+  const back = oauthReturns.get(state);
+  if (!back) throw new HttpError(400, "Phiên kết nối Google không hợp lệ hoặc đã hết hạn, hãy bấm \"Kết nối Google\" lại");
+  oauthReturns.delete(state);
+  if (error || !code) throw new HttpError(400, `Google từ chối kết nối: ${error ?? "thiếu mã xác nhận"}`);
+  const account = await finishOauth(code);
+  console.log(`Đã kết nối Google: ${account}`);
+  systemStatus = null;
+  res.redirect(back);
 });
 
 // ── Static files ────────────────────────────────────────────────────────────

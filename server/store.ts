@@ -108,6 +108,7 @@ function migrateJob(job: Job): Job {
   job.sourceUrl ??= null;
   job.sourceInfo ??= null;
   job.sourceTopic ??= null;
+  job.drive ??= null;
   return job;
 }
 
@@ -180,4 +181,23 @@ export function getSavedDefaults(): DefaultSettings | null {
 
 export function saveDefaults(defaults: DefaultSettings): void {
   writeJson(paths.defaultsFile, defaults);
+}
+
+// ── Google account ──────────────────────────────────────────────────────────
+
+/** What the app remembers about the Google account connected through OAuth. */
+export interface GoogleState {
+  refreshToken?: string;
+  account?: string;
+  /** The folder and sheet the app made itself when none were configured. */
+  folderId?: string;
+  sheetId?: string;
+}
+
+export function getGoogleState(): GoogleState {
+  return readJson<GoogleState>(paths.googleFile, {});
+}
+
+export function saveGoogleState(patch: GoogleState): void {
+  writeJson(paths.googleFile, { ...getGoogleState(), ...patch });
 }

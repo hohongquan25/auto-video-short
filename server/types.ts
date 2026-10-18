@@ -1,4 +1,4 @@
-export const STEPS = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish"] as const;
+export const STEPS = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish", "upload"] as const;
 export type Step = (typeof STEPS)[number];
 
 export const STEP_LABELS: Record<Step, string> = {
@@ -11,6 +11,7 @@ export const STEP_LABELS: Record<Step, string> = {
   tts: "Tạo giọng đọc",
   render: "Dựng video",
   publish: "Gợi ý đăng bài",
+  upload: "Lưu lên Drive",
 };
 
 export type AiProvider = "claude" | "gemini";
@@ -201,7 +202,31 @@ export interface Job {
   log: LogEntry[];
   /** Webhook for this job's status changes (e.g. an n8n Webhook node), on top of WEBHOOK_URL. */
   callbackUrl: string | null;
+  /** Where the videos went on Google Drive; null until the upload step has run. */
+  drive: DriveUpload | null;
 }
+
+/** A file the upload step sent to Drive, with the size and time of the local file it was sent from. */
+export interface DriveFile {
+  id: string;
+  size: number;
+  mtimeMs: number;
+}
+
+export interface DriveUpload {
+  /** The folder the job's folder was made in; a new one is made when this changes. */
+  rootId: string;
+  /** The job's own folder, holding its videos and covers. */
+  folderId: string;
+  /** The Google Sheet the job's videos were listed in, one row each. */
+  sheetId: string;
+  /** Uploaded files by their path in the job's parts folder. An unchanged file is not sent again. */
+  files: Record<string, DriveFile>;
+}
+
+export const driveFileUrl = (id: string) => `https://drive.google.com/file/d/${id}/view`;
+export const driveFolderUrl = (id: string) => `https://drive.google.com/drive/folders/${id}`;
+export const sheetUrl = (id: string) => `https://docs.google.com/spreadsheets/d/${id}/edit`;
 
 export interface StoryTopic {
   /** The user's topic or idea: genre, setting, characters, twists… */
@@ -230,6 +255,19 @@ export interface SystemStatus {
   claude: { ok: boolean; installed: boolean; version: string | null; subscription: string | null; model: string; error: string | null };
   olvroc: { ok: boolean; python: string; voices: number; error: string | null };
   ytdlp: { ok: boolean; version: string | null; cookies: string | null };
+  google: GoogleStatus;
+}
+
+export interface GoogleStatus {
+  ok: boolean;
+  /** How the app signs in to Google: a service account key, or a person's account through OAuth. Null when not set up. */
+  auth: "service" | "oauth" | null;
+  /** OAuth is set up, so an account can be connected (or reconnected) from the browser. */
+  canConnect: boolean;
+  account: string | null;
+  folderUrl: string | null;
+  sheetUrl: string | null;
+  error: string | null;
 }
 
 export interface Style {

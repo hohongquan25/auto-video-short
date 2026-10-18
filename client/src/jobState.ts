@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Job, JobSettings, Step } from "./api";
 
-export const STEPS: Step[] = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish"];
+export const STEPS: Step[] = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish", "upload"];
 
 /** Steps that turn a recording into a script; a topic job's AI writes the script instead. */
 const MEDIA_STEPS: Step[] = ["download", "extract", "transcribe", "rewrite"];
@@ -15,6 +15,8 @@ export type StepState = "done" | "active" | "queued" | "waiting" | "error" | "sk
 export function stepState(job: Job, step: Step): StepState {
   if (step === "review" && !job.settings.reviewBeforeTts) return "skipped";
   if (step === "download" && !job.sourceUrl) return "skipped";
+  // Only runs when Google Drive is set up on the server.
+  if (step === "upload" && job.status === "done" && !job.timings.upload) return "skipped";
   if (job.status === "done") return "done";
   if (step === job.step) {
     if (job.status === "running") return "active";
