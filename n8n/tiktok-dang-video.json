@@ -1,0 +1,1460 @@
+{
+  "id": "ssTikTokDangVid1",
+  "name": "TikTok - Gửi video vào hộp thư",
+  "nodes": [
+    {
+      "id": "fa62617b-2c23-4a1f-a1db-97b8476a1b15",
+      "name": "Theo lịch",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "5 7-23 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "02d3487b-8fa2-4ad2-a14b-f611b63483ca",
+      "name": "Đọc Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "bfeea94c-a696-46d3-af85-c44d6cd7e37e",
+      "name": "Khoá dòng",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Lấy 1 video').first().json.id }}",
+            "status": "posting",
+            "posted_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "posted_at",
+              "displayName": "posted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1af6cf96-8c3f-4d9e-b8bc-8660dadc586f",
+      "name": "Cấu hình TikTok",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "11fd9842-e83f-495e-bab8-aee7744298b8",
+              "name": "client_key",
+              "value": "DAN_CLIENT_KEY_TIKTOK",
+              "type": "string"
+            },
+            {
+              "id": "320c4ffb-e863-44ce-9c5d-e1830471c99b",
+              "name": "client_secret",
+              "value": "DAN_CLIENT_SECRET_TIKTOK",
+              "type": "string"
+            },
+            {
+              "id": "86415203-623b-422f-8a78-56eb5e3ddd36",
+              "name": "telegram_bot_token",
+              "value": "DAN_BOT_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "4ca629bc-e839-4005-9e02-989bf0616786",
+              "name": "telegram_chat_id",
+              "value": "DAN_CHAT_ID",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7c349116-5bd5-4e84-88e0-9c8142ffb183",
+      "name": "Đọc token TikTok",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1760,
+        300
+      ],
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "TikTokAuth",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "key",
+              "lookupValue": "tiktok"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3067254a-3544-4d3d-aac6-38ef5294ecc8",
+      "name": "Làm mới token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/oauth/token/",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_key",
+              "value": "={{ $('Cấu hình TikTok').first().json.client_key }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $('Cấu hình TikTok').first().json.client_secret }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $json.refresh_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "372ca5b8-5a47-4277-aacd-69970e5df237",
+      "name": "Kiểm tra token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nif (!r.access_token) {\n  throw new Error('Không làm mới được token TikTok: ' + (r.error_description || r.error || JSON.stringify(r)) +\n    '. Chạy lại workflow \"TikTok - Kết nối\".');\n}\nreturn [{ json: { access_token: r.access_token, refresh_token: r.refresh_token } }];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "a423e773-063a-4ebc-99b4-a1a7dfbb42ad",
+      "name": "Lưu token mới",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2420,
+        300
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "TikTokAuth",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "key": "tiktok",
+            "refresh_token": "={{ $json.refresh_token }}",
+            "updated_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "key"
+          ],
+          "schema": [
+            {
+              "id": "key",
+              "displayName": "key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "refresh_token",
+              "displayName": "refresh_token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b6af573f-6cb0-451c-9f38-89c71bd0c71e",
+      "name": "Kích thước video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Lấy 1 video').first().json.video_file_id }}?fields=size",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "c2882f24-6dda-4b46-b304-6a12996687b5",
+      "name": "Tính số khúc",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// TikTok nhận video theo khúc 5–64 MB, khúc cuối gánh phần dư (tối đa 128 MB).\nconst CHUNK = 10 * 1024 * 1024;\nconst size = Number($input.first().json.size);\nif (!size) throw new Error('Không đọc được kích thước video trên Drive');\nconst count = Math.max(1, Math.floor(size / CHUNK));\nreturn [{ json: { video_size: size, chunk_size: count === 1 ? size : CHUNK, total_chunk_count: count } }];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "88d4c36d-1e8a-47ff-839d-ae5b615b6cf9",
+      "name": "Khởi tạo upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Kiểm tra token').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_info: { source: 'FILE_UPLOAD', video_size: $json.video_size, chunk_size: $json.chunk_size, total_chunk_count: $json.total_chunk_count } }) }}",
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "2a476aa5-75a1-4938-9d95-5a663c63955a",
+      "name": "Chia khúc",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const init = $input.first().json;\nconst { upload_url, publish_id } = init.data ?? {};\nif (!upload_url) throw new Error('TikTok không trả upload_url: ' + JSON.stringify(init.error ?? init));\nconst { video_size: size, chunk_size: chunk, total_chunk_count: count } = $('Tính số khúc').first().json;\nconst fileId = $('Lấy 1 video').first().json.video_file_id;\nreturn Array.from({ length: count }, (_, i) => {\n  const start = i * chunk;\n  const end = (i === count - 1 ? size : start + chunk) - 1;\n  return { json: { fileId, upload_url, publish_id, part: i + 1, bytes: `bytes=${start}-${end}`, range: `bytes ${start}-${end}/${size}` } };\n});"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "30b3f9f8-c5c1-477a-9f91-5eaacb786ad9",
+      "name": "Từng khúc",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        3520,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "cc2cbc01-b49b-418c-a5f7-0d7f487d7b20",
+      "name": "Tải khúc từ Drive",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3740,
+        420
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.fileId }}?alt=media",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Range",
+              "value": "={{ $json.bytes }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "7fdf4d8f-3af2-4a11-9838-f3172a8de002",
+      "name": "Gửi khúc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3960,
+        420
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $('Từng khúc').item.json.upload_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Range",
+              "value": "={{ $('Từng khúc').item.json.range }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "video/mp4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "95869108-bded-4744-8350-ac732f039905",
+      "name": "Chờ TikTok xử lý",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3740,
+        160
+      ],
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "7ebed2b5-95a2-4012-a914-c51e67eeb26b",
+      "name": "Kiểm tra trạng thái",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4180,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Kiểm tra token').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ publish_id: $('Chia khúc').first().json.publish_id }) }}",
+        "options": {}
+      },
+      "onError": "continueErrorOutput",
+      "executeOnce": true
+    },
+    {
+      "id": "46dbc232-8867-4915-9306-96fd4151b6c4",
+      "name": "Đánh giá",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4400,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// TikTok cần thêm thời gian xử lý video lớn: kiểm tra lại tối đa 10 lần, cách nhau 30 giây.\nconst d = $input.first().json.data ?? {};\nif (d.status === 'FAILED') throw new Error('TikTok báo lỗi: ' + (d.fail_reason || 'không rõ'));\nconst processing = String(d.status ?? '').startsWith('PROCESSING');\nreturn [{ json: { status: d.status ?? 'không rõ', publish_id: $('Chia khúc').first().json.publish_id, done: !processing || $runIndex >= 9 } }];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "df08ecea-172c-4cff-8f9c-1e3be618e5e5",
+      "name": "Ghi đã vào hộp thư",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4840,
+        200
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Lấy 1 video').first().json.id }}",
+            "status": "inbox",
+            "posted_at": "={{ $now.toISO() }}",
+            "note": "={{ ($json.status === 'SEND_TO_USER_INBOX' ? 'Đã vào hộp thư TikTok' : 'TikTok vẫn đang xử lý (' + $json.status + ')') + ', mở app TikTok để đăng. publish_id: ' + $json.publish_id }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "posted_at",
+              "displayName": "posted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ba7df0f0-4b54-49a5-b9fa-6e6ff8f38a09",
+      "name": "Ghi lỗi",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4840,
+        560
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Lấy 1 video').first().json.id }}",
+            "status": "error",
+            "note": "={{ String($json.error?.message ?? $json.error ?? 'Lỗi không rõ').slice(0, 500) }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "69bf1e00-7033-42fc-a7a4-f0a889e93f9a",
+      "name": "Xử lý xong?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4620,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bc073eb4-2282-456f-8314-70c551573c8a",
+              "leftValue": "={{ $json.done }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2972be59-8d67-4a30-8134-4b847c193773",
+      "name": "Soạn tin Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5060,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst r = $('Lấy 1 video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst part = r.part ? ` · Phần ${r.part}/${r.total_parts}` : ' · Trọn bộ';\nconst s = $('Đánh giá').last().json;\nconst caption = String(r.post_description ?? '').trim();\nconst lines = caption.split('\\n');\nconst isTags = (l) => l.trim() && l.trim().split(/\\s+/).every((w) => w.startsWith('#'));\n// Dòng đầu của caption là tên video, các dòng toàn hashtag là phần hashtag.\nconst name = (lines[0] ?? '').trim() || `${r.title}${part}`;\nconst body = lines.slice(1).filter((l) => !isTags(l)).join('\\n').trim();\nconst tags = String(r.hashtags ?? '').trim() || lines.filter(isTags).join(' ');\nconst block = (label, text) => text ? [`${label} (chạm để copy):`, `<pre>${esc(text.slice(0, 1500))}</pre>`, ''] : [];\nconst sec = Math.round(Number(r.duration_sec) || 0);\nconst text = [\n  `🎬 <b>${esc(r.title)}</b>${part}`,\n  s.status === 'SEND_TO_USER_INBOX'\n    ? '✅ Đã vào hộp thư TikTok, mở app để đăng'\n    : `⏳ TikTok vẫn đang xử lý (${esc(s.status)}), vài phút nữa video sẽ vào hộp thư`,\n  `⏱ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`,\n  '',\n  ...block('📌 <b>Tên</b>', name),\n  ...block('📝 <b>Nội dung</b>', body),\n  ...block('#️⃣ <b>Hashtag</b>', tags),\n  ...block('📋 <b>Caption đầy đủ</b>, gồm cả 3 phần trên', caption),\n].join('\\n').trim();\nreturn [{ json: { payload: {\n  chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text, link_preview_options: { is_disabled: true },\n  reply_markup: { inline_keyboard: [[\n    { text: '✅ Đã đăng', callback_data: `posted|${r.id}` },\n    { text: '⏭ Bỏ qua', callback_data: `skip|${r.id}` },\n  ], [\n    { text: '⏩ Đã đăng, gửi tiếp', callback_data: `postnext|${r.id}` },\n  ]] },\n} } }];"
+      }
+    },
+    {
+      "id": "bb9c9163-c0d1-4a69-801d-c2b3af34d72f",
+      "name": "Soạn tin báo lỗi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5060,
+        560
+      ],
+      "parameters": {
+        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst r = $('Lấy 1 video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst part = r.part ? ` · Phần ${r.part}/${r.total_parts}` : ' · Trọn bộ';\nconst msg = String($input.first().json.note ?? '').slice(0, 1000);\nconst text = [\n  '❌ <b>Không gửi được video vào TikTok</b>',\n  `🎬 ${esc(r.title)}${part}`,\n  '',\n  `<pre>${esc(msg || 'Lỗi không rõ, xem cột note trong Sheet')}</pre>`,\n  'Sửa xong thì đổi status trong Sheet về pending để gửi lại.',\n].join('\\n');\nreturn [{ json: { payload: { chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text } } }];"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "455c93ff-e073-4048-946c-66b3db3237e4",
+      "name": "Gửi Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5280,
+        380
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $('Cấu hình TikTok').first().json.telegram_bot_token }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "4bb9fba1-4a3a-4c9d-86e3-fe9390a8ceff",
+      "name": "Chạy tay",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        480
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "3255584b-4708-46dc-8595-4c5c4cdbeeaa",
+      "name": "Chọn video",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Đăng mọi video chưa đăng, kể cả video ngày trước chưa kịp đăng: truyện cũ trước, trong mỗi truyện theo thứ tự phần, bỏ video trọn bộ.\n// Còn video gửi hôm nay nằm trong hộp thư chưa đăng thì chờ; quá 3 giờ thì nhắc đúng 1 lần.\n// Video gửi vào hộp thư từ ngày trước (tin Telegram đã bị dọn lúc 0h) không chặn nữa.\n// Bấm ⏩ trong Telegram thì chạy ngay, không đợi lịch; không gửi được thì nhắn lý do.\nconst force = $('Gửi tiếp từ Telegram').isExecuted;\nconst rows = $input.all().map((i) => i.json);\nconst today = $now.toISODate();\nconst dayOf = (v) => DateTime.fromISO(String(v ?? '')).setZone('Asia/Ho_Chi_Minh').toISODate();\nconst mine = rows.filter((r) => r.format === 'tiktok' || r.format === 'original');\nconst order = (a, b) => String(a.job_id).localeCompare(String(b.job_id)) || Number(a.part || 0) - Number(b.part || 0);\nconst due = (r) => !r.scheduled_at || DateTime.fromISO(String(r.scheduled_at)) <= $now;\nconst label = (r) => `${r.title}${r.part ? ` · Phần ${r.part}/${r.total_parts}` : ''}`;\nconst info = (text) => (force ? [{ json: { mode: 'info', text } }] : []);\n// Video đang gửi dở (khoá chưa quá 30 phút) thì không gửi chồng.\nconst sending = mine.find((r) => r.status === 'posting' && $now.diff(DateTime.fromISO(String(r.posted_at ?? '')), 'minutes').minutes < 30);\nif (sending) return info(`⏳ Đang gửi ${label(sending)} vào TikTok, vài phút nữa sẽ có tin báo.`);\nconst pending = mine.filter((r) => r.status === 'pending' && r.kind !== 'full').sort(order);\nconst next = pending.find(due) ?? null;\nconst waiting = mine.filter((r) => r.status === 'inbox' && dayOf(r.posted_at) === today).sort(order);\nif (waiting.length) {\n  const w = waiting[0];\n  if (force) return info(`📥 ${label(w)} vẫn nằm trong hộp thư TikTok. Đăng xong bấm \"⏩ Đã đăng, gửi tiếp\" để nhận video kế tiếp.`);\n  const sent = DateTime.fromISO(String(w.posted_at ?? ''));\n  const late = !sent.isValid || $now.diff(sent, 'hours').hours >= 3;\n  if (!late || String(w.note ?? '').includes('Đã nhắc')) return [];\n  return [{ json: { mode: 'remind', waiting: w, waitingCount: waiting.length, row: next } }];\n}\nif (next) return [{ json: { mode: 'send', row: next } }];\nconst later = pending[0];\nreturn info(later\n  ? `🕒 Video tiếp theo (${label(later)}) hẹn gửi lúc ${DateTime.fromISO(String(later.scheduled_at)).setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm dd/MM')}.`\n  : '📭 Hết video để gửi.');"
+      }
+    },
+    {
+      "id": "ee25dcc4-6aaa-41ac-8bae-f81673783698",
+      "name": "Cần nhắc?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "277e3528-9a41-41d2-9b13-d7818c24433f",
+              "leftValue": "={{ $json.mode }}",
+              "rightValue": "remind",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "14090fdb-7ac8-4446-9473-46953e951c98",
+      "name": "Soạn tin nhắc",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        120
+      ],
+      "parameters": {
+        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst { waiting: w, waitingCount, row } = $('Chọn video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst label = (r) => `${esc(r.title)}${r.part ? ` · Phần ${r.part}/${r.total_parts}` : ''}`;\nconst sent = DateTime.fromISO(String(w.posted_at ?? ''));\nconst text = [\n  '⏰ <b>Nhắc đăng</b>: video này nằm trong hộp thư TikTok hơn 3 giờ rồi',\n  `🎬 ${label(w)}${sent.isValid ? ` (gửi lúc ${sent.setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm')})` : ''}`,\n  waitingCount > 1 ? `Còn ${waitingCount} video trong hộp thư chưa đăng.` : null,\n  row ? `\\nĐang chờ gửi tiếp: ${label(row)}` : null,\n  '\\nĐăng xong thì bấm ✅ Đã đăng (ở đây hoặc ở tin trước). Bấm ⏩ để nhận video kế tiếp ngay.',\n].filter((l) => l !== null).join('\\n');\nreturn [{ json: { payload: {\n  chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text,\n  reply_markup: { inline_keyboard: [[\n    { text: '✅ Đã đăng', callback_data: `posted|${w.id}` },\n    { text: '⏭ Bỏ qua', callback_data: `skip|${w.id}` },\n  ], [\n    { text: '⏩ Đã đăng, gửi tiếp', callback_data: `postnext|${w.id}` },\n  ]] },\n} } }];"
+      }
+    },
+    {
+      "id": "c2bc6d44-8326-40d7-857d-4e331ce5f80d",
+      "name": "Lấy 1 video",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: $input.first().json.row }];"
+      }
+    },
+    {
+      "id": "b6caaac4-025d-4955-bef6-39d28dcb401a",
+      "name": "Ghi đã nhắc",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1320,
+        120
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.waiting.id }}",
+            "note": "={{ String($json.waiting.note ?? '') + ' · Đã nhắc lúc ' + $now.toFormat('HH:mm') }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e6daf064-7871-4d6a-b6b5-880c7a999462",
+      "name": "Lưu tin Telegram",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        5500,
+        380
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "TelegramLog",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message_id": "={{ String($json.result.message_id) }}",
+            "date": "={{ $now.toISODate() }}",
+            "sent_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sent_at",
+              "displayName": "sent_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      }
+    },
+    {
+      "id": "82b8320b-dff6-4c6a-9350-8648a978fb01",
+      "name": "Gửi tiếp từ Telegram",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        660
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "8cbb6adc-22e1-4806-924c-666c249891bc",
+      "name": "Chỉ báo tin?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7c8e1a4b-6c13-42ea-87a2-91f5d57c0f93",
+              "leftValue": "={{ $json.mode }}",
+              "rightValue": "info",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d5bfe015-dd5f-4a6d-87b6-155b85b9b3ef",
+      "name": "Soạn tin báo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        500
+      ],
+      "parameters": {
+        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nreturn [{ json: { payload: { chat_id: cfg.telegram_chat_id, text: $json.text } } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Theo lịch": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình TikTok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Khoá dòng": {
+      "main": [
+        [
+          {
+            "node": "Đọc token TikTok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cấu hình TikTok": {
+      "main": [
+        [
+          {
+            "node": "Đọc Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc token TikTok": {
+      "main": [
+        [
+          {
+            "node": "Làm mới token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Làm mới token": {
+      "main": [
+        [
+          {
+            "node": "Kiểm tra token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kiểm tra token": {
+      "main": [
+        [
+          {
+            "node": "Lưu token mới",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lưu token mới": {
+      "main": [
+        [
+          {
+            "node": "Kích thước video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kích thước video": {
+      "main": [
+        [
+          {
+            "node": "Tính số khúc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tính số khúc": {
+      "main": [
+        [
+          {
+            "node": "Khởi tạo upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Khởi tạo upload": {
+      "main": [
+        [
+          {
+            "node": "Chia khúc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chia khúc": {
+      "main": [
+        [
+          {
+            "node": "Từng khúc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Từng khúc": {
+      "main": [
+        [
+          {
+            "node": "Chờ TikTok xử lý",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tải khúc từ Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải khúc từ Drive": {
+      "main": [
+        [
+          {
+            "node": "Gửi khúc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gửi khúc": {
+      "main": [
+        [
+          {
+            "node": "Từng khúc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chờ TikTok xử lý": {
+      "main": [
+        [
+          {
+            "node": "Kiểm tra trạng thái",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kiểm tra trạng thái": {
+      "main": [
+        [
+          {
+            "node": "Đánh giá",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đánh giá": {
+      "main": [
+        [
+          {
+            "node": "Xử lý xong?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Xử lý xong?": {
+      "main": [
+        [
+          {
+            "node": "Ghi đã vào hộp thư",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chờ TikTok xử lý",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi đã vào hộp thư": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi lỗi": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin báo lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin Telegram": {
+      "main": [
+        [
+          {
+            "node": "Gửi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin báo lỗi": {
+      "main": [
+        [
+          {
+            "node": "Gửi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chạy tay": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình TikTok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc Sheet": {
+      "main": [
+        [
+          {
+            "node": "Chọn video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chọn video": {
+      "main": [
+        [
+          {
+            "node": "Cần nhắc?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin nhắc": {
+      "main": [
+        [
+          {
+            "node": "Gửi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy 1 video": {
+      "main": [
+        [
+          {
+            "node": "Khoá dòng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cần nhắc?": {
+      "main": [
+        [
+          {
+            "node": "Ghi đã nhắc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chỉ báo tin?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi đã nhắc": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin nhắc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gửi Telegram": {
+      "main": [
+        [
+          {
+            "node": "Lưu tin Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gửi tiếp từ Telegram": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình TikTok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chỉ báo tin?": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin báo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lấy 1 video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin báo": {
+      "main": [
+        [
+          {
+            "node": "Gửi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "saveManualExecutions": true
+  }
+}

@@ -1,0 +1,478 @@
+{
+  "id": "ssYouTubeDangVd1",
+  "name": "YouTube - Đăng video",
+  "nodes": [
+    {
+      "id": "366c0b7f-706f-4514-a138-0661819d24bf",
+      "name": "Theo lịch",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 20 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7bd3357f-240a-446d-84ef-02760f46a2b9",
+      "name": "Video chờ đăng",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "status",
+              "lookupValue": "pending"
+            },
+            {
+              "lookupColumn": "format",
+              "lookupValue": "youtube"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2dd81b3c-1645-4e41-979b-34ddc1953d85",
+      "name": "Đã tới giờ",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3e89289c-86a6-4b4c-a671-4d0cdf6f72e1",
+              "leftValue": "={{ !$json.scheduled_at || DateTime.fromISO(String($json.scheduled_at)) <= $now }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0126c611-3d49-4916-a938-ea4d3b733791",
+      "name": "Sắp xếp theo phần",
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "job_id"
+            },
+            {
+              "fieldName": "part"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "9af6d8e1-b22c-415e-98bc-cd49521819f1",
+      "name": "Lấy 1 video",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "maxItems": 1
+      }
+    },
+    {
+      "id": "75879839-4603-4dd3-b729-62ffde886fdf",
+      "name": "Khoá dòng",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Lấy 1 video').first().json.id }}",
+            "status": "posting"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8a252bbd-79e0-4c5c-88e9-c73c5fdf8f8f",
+      "name": "Tải video từ Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Lấy 1 video').first().json.video_file_id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "dda5a502-78bb-4bf4-b140-c0616c2134ec",
+      "name": "Đăng YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $('Lấy 1 video').first().json.post_title }}",
+        "regionCode": "VN",
+        "categoryId": "24",
+        "binaryProperty": "data",
+        "options": {
+          "description": "={{ $('Lấy 1 video').first().json.post_description }}",
+          "tags": "={{ $('Lấy 1 video').first().json.tags }}",
+          "privacyStatus": "public"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "c9b484ef-82b4-46b5-9146-80d5dc339656",
+      "name": "Ghi đã đăng",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1760,
+        200
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Lấy 1 video').first().json.id }}",
+            "status": "posted",
+            "posted_at": "={{ $now.toISO() }}",
+            "post_url": "={{ 'https://youtu.be/' + $json.id }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "posted_at",
+              "displayName": "posted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "post_url",
+              "displayName": "post_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "14303dd7-b725-4728-8cdf-48e6d2059727",
+      "name": "Ghi lỗi",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1760,
+        480
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Lấy 1 video').first().json.id }}",
+            "status": "error",
+            "note": "={{ String($json.error?.message ?? $json.error ?? 'Lỗi không rõ').slice(0, 500) }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Theo lịch": {
+      "main": [
+        [
+          {
+            "node": "Video chờ đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Video chờ đăng": {
+      "main": [
+        [
+          {
+            "node": "Đã tới giờ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đã tới giờ": {
+      "main": [
+        [
+          {
+            "node": "Sắp xếp theo phần",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sắp xếp theo phần": {
+      "main": [
+        [
+          {
+            "node": "Lấy 1 video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy 1 video": {
+      "main": [
+        [
+          {
+            "node": "Khoá dòng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Khoá dòng": {
+      "main": [
+        [
+          {
+            "node": "Tải video từ Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải video từ Drive": {
+      "main": [
+        [
+          {
+            "node": "Đăng YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đăng YouTube": {
+      "main": [
+        [
+          {
+            "node": "Ghi đã đăng",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "saveManualExecutions": true
+  }
+}

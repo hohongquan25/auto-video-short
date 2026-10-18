@@ -1,0 +1,223 @@
+{
+  "id": "ssTeleDonTin0001",
+  "name": "Telegram - Dọn tin hôm qua",
+  "nodes": [
+    {
+      "id": "69a8bba9-3b41-41b1-a94d-0d2c88ad8a96",
+      "name": "Lúc 0h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6793f0c4-2cbb-49cd-9cbf-7b18a16b955b",
+      "name": "Chạy tay",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        480
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "5209cd2f-9448-4345-a18b-5cf3aebce168",
+      "name": "Cấu hình Telegram",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "dde3d026-6d66-4fe3-b977-dbb91b0f4351",
+              "name": "bot_token",
+              "value": "DAN_BOT_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "3a99eab0-e4d8-4c9f-ac15-8dc5ec417364",
+              "name": "chat_id",
+              "value": "DAN_CHAT_ID",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b80525a4-d518-4e47-90cb-982ab9c48b5a",
+      "name": "Đọc nhật ký tin",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "TelegramLog",
+          "mode": "name"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "66b84d0f-7073-4121-9a30-26fe4447af5f",
+      "name": "Tin các ngày trước",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Tin của các ngày trước nằm liền nhau ở đầu tab (ghi theo thứ tự thời gian).\nconst today = $now.toISODate();\nconst rows = $input.all().map((i) => i.json);\nlet prefix = 0;\nwhile (prefix < rows.length && String(rows[prefix].date) !== today) prefix++;\nreturn rows.slice(0, prefix).map((r) => ({ json: { message_id: Number(r.message_id), prefix } }));"
+      }
+    },
+    {
+      "id": "cf207b3b-6f12-4867-a3c7-23f9861024b4",
+      "name": "Xoá tin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $('Cấu hình Telegram').first().json.bot_token }}/deleteMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Cấu hình Telegram').first().json.chat_id, message_id: $json.message_id }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "7a8a55d1-a8f7-415b-a7ca-d6017c497c7b",
+      "name": "Xoá dòng nhật ký",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1100,
+        300
+      ],
+      "executeOnce": true,
+      "parameters": {
+        "operation": "delete",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "TelegramLog",
+          "mode": "name"
+        },
+        "toDelete": "rows",
+        "startIndex": 2,
+        "numberToDelete": "={{ $('Tin các ngày trước').first().json.prefix }}"
+      }
+    }
+  ],
+  "connections": {
+    "Lúc 0h": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chạy tay": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cấu hình Telegram": {
+      "main": [
+        [
+          {
+            "node": "Đọc nhật ký tin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc nhật ký tin": {
+      "main": [
+        [
+          {
+            "node": "Tin các ngày trước",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tin các ngày trước": {
+      "main": [
+        [
+          {
+            "node": "Xoá tin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Xoá tin": {
+      "main": [
+        [
+          {
+            "node": "Xoá dòng nhật ký",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "saveManualExecutions": true
+  }
+}

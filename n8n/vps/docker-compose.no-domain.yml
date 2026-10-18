@@ -1,0 +1,20 @@
+# Bản không cần tên miền: n8n chỉ mở cho chính VPS (127.0.0.1),
+# mở giao diện qua đường hầm SSH: ssh -L 5678:localhost:5678 root@<IP> rồi vào http://localhost:5678
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
+    restart: always
+    environment:
+      - GENERIC_TIMEZONE=Asia/Ho_Chi_Minh
+      - TZ=Asia/Ho_Chi_Minh
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      # Xoá lịch sử chạy cũ hơn 14 ngày để ổ đĩa không đầy
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      - "127.0.0.1:5678:5678"
+
+volumes:
+  n8n_data:
