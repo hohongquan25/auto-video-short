@@ -25,7 +25,7 @@ export function jobLinks(job: Job) {
     full: o.fullVideo && video(o.fullVideo, o.format, null),
   }));
   return {
-    page: `${base}/jobs/${job.id}`,
+    page: `${base}/${job.kind === "summary" ? "summaries" : "jobs"}/${job.id}`,
     api: `${base}/api/jobs/${job.id}`,
     driveFolder: job.drive ? driveFolderUrl(job.drive.folderId) : null,
     sheet: job.drive ? sheetUrl(job.drive.sheetId) : null,
@@ -33,6 +33,10 @@ export function jobLinks(job: Job) {
     // The first format's videos, where workflows built for a single format look for them.
     parts: outputs[0]?.parts ?? [],
     full: outputs[0]?.full ?? null,
+    // A summary job's cut video and what it says, once made.
+    summary: job.summary?.result?.file
+      ? { video: `${base}/files/jobs/${job.id}/${job.summary.result.file}`, title: job.summary.result.title, text: job.summary.result.text }
+      : null,
   };
 }
 

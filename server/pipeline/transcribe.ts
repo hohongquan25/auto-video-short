@@ -18,7 +18,13 @@ type WhisperEvent =
  */
 let lastSpeechRate = 1.5;
 
-export async function transcribe(audioWav: string, outTxt: string, r: StepReporter): Promise<void> {
+/**
+ * Transcribe `audioWav` into `outTxt`. `language` overrides WHISPER_LANGUAGE ("" detects it);
+ * with `linesJson` every line is also written there with its times and the language.
+ */
+export async function transcribe(
+  audioWav: string, outTxt: string, r: StepReporter, opts: { language?: string; linesJson?: string } = {},
+): Promise<void> {
   let totalSec = 0;
   let startedAt = 0;
   let nextMilestone = 0.2;
@@ -81,8 +87,9 @@ export async function transcribe(audioWav: string, outTxt: string, r: StepReport
   await run(
     config.whisperPython,
     [
-      config.whisperScript, audioWav, outTxt, config.whisperModel, config.whisperLanguage,
+      config.whisperScript, audioWav, outTxt, config.whisperModel, opts.language ?? config.whisperLanguage,
       config.whisperBeamSize, config.whisperBatchSize, config.whisperThreads,
+      ...(opts.linesJson ? [opts.linesJson] : []),
     ],
     {
       signal: r.signal,

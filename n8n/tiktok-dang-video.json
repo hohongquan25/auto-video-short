@@ -419,7 +419,10 @@
           }
         }
       },
-      "onError": "continueErrorOutput"
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "id": "7fdf4d8f-3af2-4a11-9838-f3172a8de002",
@@ -451,7 +454,10 @@
         "inputDataFieldName": "data",
         "options": {}
       },
-      "onError": "continueErrorOutput"
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "id": "95869108-bded-4744-8350-ac732f039905",
@@ -748,7 +754,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "// Đăng mọi video chưa đăng, kể cả video ngày trước chưa kịp đăng: truyện cũ trước, trong mỗi truyện theo thứ tự phần, bỏ video trọn bộ.\n// Còn video gửi hôm nay nằm trong hộp thư chưa đăng thì chờ; quá 3 giờ thì nhắc đúng 1 lần.\n// Video gửi vào hộp thư từ ngày trước (tin Telegram đã bị dọn lúc 0h) không chặn nữa.\n// Bấm ⏩ trong Telegram thì chạy ngay, không đợi lịch; không gửi được thì nhắn lý do.\nconst force = $('Gửi tiếp từ Telegram').isExecuted;\nconst rows = $input.all().map((i) => i.json);\nconst today = $now.toISODate();\nconst dayOf = (v) => DateTime.fromISO(String(v ?? '')).setZone('Asia/Ho_Chi_Minh').toISODate();\nconst mine = rows.filter((r) => r.format === 'tiktok' || r.format === 'original');\nconst order = (a, b) => String(a.job_id).localeCompare(String(b.job_id)) || Number(a.part || 0) - Number(b.part || 0);\nconst due = (r) => !r.scheduled_at || DateTime.fromISO(String(r.scheduled_at)) <= $now;\nconst label = (r) => `${r.title}${r.part ? ` · Phần ${r.part}/${r.total_parts}` : ''}`;\nconst info = (text) => (force ? [{ json: { mode: 'info', text } }] : []);\n// Video đang gửi dở (khoá chưa quá 30 phút) thì không gửi chồng.\nconst sending = mine.find((r) => r.status === 'posting' && $now.diff(DateTime.fromISO(String(r.posted_at ?? '')), 'minutes').minutes < 30);\nif (sending) return info(`⏳ Đang gửi ${label(sending)} vào TikTok, vài phút nữa sẽ có tin báo.`);\nconst pending = mine.filter((r) => r.status === 'pending' && r.kind !== 'full').sort(order);\nconst next = pending.find(due) ?? null;\nconst waiting = mine.filter((r) => r.status === 'inbox' && dayOf(r.posted_at) === today).sort(order);\nif (waiting.length) {\n  const w = waiting[0];\n  if (force) return info(`📥 ${label(w)} vẫn nằm trong hộp thư TikTok. Đăng xong bấm \"⏩ Đã đăng, gửi tiếp\" để nhận video kế tiếp.`);\n  const sent = DateTime.fromISO(String(w.posted_at ?? ''));\n  const late = !sent.isValid || $now.diff(sent, 'hours').hours >= 3;\n  if (!late || String(w.note ?? '').includes('Đã nhắc')) return [];\n  return [{ json: { mode: 'remind', waiting: w, waitingCount: waiting.length, row: next } }];\n}\nif (next) return [{ json: { mode: 'send', row: next } }];\nconst later = pending[0];\nreturn info(later\n  ? `🕒 Video tiếp theo (${label(later)}) hẹn gửi lúc ${DateTime.fromISO(String(later.scheduled_at)).setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm dd/MM')}.`\n  : '📭 Hết video để gửi.');"
+        "jsCode": "// Đăng mọi video chưa đăng, kể cả video ngày trước chưa kịp đăng: truyện cũ trước, trong mỗi truyện theo thứ tự phần.\n// Video trọn bộ gửi sau cùng, khi mọi phần của truyện đó đã đăng hoặc bỏ qua.\n// Còn video gửi hôm nay nằm trong hộp thư chưa đăng thì chờ; quá 3 giờ thì nhắc đúng 1 lần.\n// Video gửi vào hộp thư từ ngày trước (tin Telegram đã bị dọn lúc 0h) không chặn nữa.\n// Bấm ⏩ trong Telegram thì chạy ngay, không đợi lịch; không gửi được thì nhắn lý do.\nconst force = $('Gửi tiếp từ Telegram').isExecuted;\nconst rows = $input.all().map((i) => i.json);\nconst today = $now.toISODate();\nconst dayOf = (v) => DateTime.fromISO(String(v ?? '')).setZone('Asia/Ho_Chi_Minh').toISODate();\nconst mine = rows.filter((r) => r.format === 'tiktok' || r.format === 'original');\nconst rank = (r) => (r.kind === 'full' ? Infinity : Number(r.part || 0));\nconst order = (a, b) => String(a.job_id).localeCompare(String(b.job_id)) || rank(a) - rank(b);\nconst due = (r) => !r.scheduled_at || DateTime.fromISO(String(r.scheduled_at)) <= $now;\nconst label = (r) => `${r.title}${r.part ? ` · Phần ${r.part}/${r.total_parts}` : r.kind === 'full' ? ' · Trọn bộ' : ''}`;\n// Bản trọn bộ chờ tới khi không còn phần nào của truyện chưa đăng (đang chờ, đang gửi, nằm trong hộp thư).\nconst partsLeft = (r) => mine.some((p) => p.job_id === r.job_id && p.kind !== 'full' && ['pending', 'posting', 'inbox'].includes(p.status));\nconst ready = (r) => due(r) && (r.kind !== 'full' || !partsLeft(r));\nconst info = (text) => (force ? [{ json: { mode: 'info', text } }] : []);\n// Video đang gửi dở (khoá chưa quá 30 phút) thì không gửi chồng.\nconst sending = mine.find((r) => r.status === 'posting' && $now.diff(DateTime.fromISO(String(r.posted_at ?? '')), 'minutes').minutes < 30);\nif (sending) return info(`⏳ Đang gửi ${label(sending)} vào TikTok, vài phút nữa sẽ có tin báo.`);\nconst pending = mine.filter((r) => r.status === 'pending').sort(order);\nconst next = pending.find(ready) ?? null;\nconst waiting = mine.filter((r) => r.status === 'inbox' && dayOf(r.posted_at) === today).sort(order);\nif (waiting.length) {\n  const w = waiting[0];\n  if (force) return info(`📥 ${label(w)} vẫn nằm trong hộp thư TikTok. Đăng xong bấm \"⏩ Đã đăng, gửi tiếp\" để nhận video kế tiếp.`);\n  const sent = DateTime.fromISO(String(w.posted_at ?? ''));\n  const late = !sent.isValid || $now.diff(sent, 'hours').hours >= 3;\n  if (!late || String(w.note ?? '').includes('Đã nhắc')) return [];\n  return [{ json: { mode: 'remind', waiting: w, waitingCount: waiting.length, row: next } }];\n}\nif (next) return [{ json: { mode: 'send', row: next } }];\nconst later = pending.find((r) => !due(r));\nif (later) return info(`🕒 Video tiếp theo (${label(later)}) hẹn gửi lúc ${DateTime.fromISO(String(later.scheduled_at)).setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm dd/MM')}.`);\nconst held = pending[0];\nreturn info(held\n  ? `📥 ${label(held)} sẽ gửi khi các phần của truyện này đã đăng hết (còn phần nằm trong hộp thư TikTok).`\n  : '📭 Hết video để gửi.');"
       }
     },
     {
@@ -794,7 +800,7 @@
         120
       ],
       "parameters": {
-        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst { waiting: w, waitingCount, row } = $('Chọn video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst label = (r) => `${esc(r.title)}${r.part ? ` · Phần ${r.part}/${r.total_parts}` : ''}`;\nconst sent = DateTime.fromISO(String(w.posted_at ?? ''));\nconst text = [\n  '⏰ <b>Nhắc đăng</b>: video này nằm trong hộp thư TikTok hơn 3 giờ rồi',\n  `🎬 ${label(w)}${sent.isValid ? ` (gửi lúc ${sent.setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm')})` : ''}`,\n  waitingCount > 1 ? `Còn ${waitingCount} video trong hộp thư chưa đăng.` : null,\n  row ? `\\nĐang chờ gửi tiếp: ${label(row)}` : null,\n  '\\nĐăng xong thì bấm ✅ Đã đăng (ở đây hoặc ở tin trước). Bấm ⏩ để nhận video kế tiếp ngay.',\n].filter((l) => l !== null).join('\\n');\nreturn [{ json: { payload: {\n  chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text,\n  reply_markup: { inline_keyboard: [[\n    { text: '✅ Đã đăng', callback_data: `posted|${w.id}` },\n    { text: '⏭ Bỏ qua', callback_data: `skip|${w.id}` },\n  ], [\n    { text: '⏩ Đã đăng, gửi tiếp', callback_data: `postnext|${w.id}` },\n  ]] },\n} } }];"
+        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst { waiting: w, waitingCount, row } = $('Chọn video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst label = (r) => `${esc(r.title)}${r.part ? ` · Phần ${r.part}/${r.total_parts}` : r.kind === 'full' ? ' · Trọn bộ' : ''}`;\nconst sent = DateTime.fromISO(String(w.posted_at ?? ''));\nconst text = [\n  '⏰ <b>Nhắc đăng</b>: video này nằm trong hộp thư TikTok hơn 3 giờ rồi',\n  `🎬 ${label(w)}${sent.isValid ? ` (gửi lúc ${sent.setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm')})` : ''}`,\n  waitingCount > 1 ? `Còn ${waitingCount} video trong hộp thư chưa đăng.` : null,\n  row ? `\\nĐang chờ gửi tiếp: ${label(row)}` : null,\n  '\\nĐăng xong thì bấm ✅ Đã đăng (ở đây hoặc ở tin trước). Bấm ⏩ để nhận video kế tiếp ngay.',\n].filter((l) => l !== null).join('\\n');\nreturn [{ json: { payload: {\n  chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text,\n  reply_markup: { inline_keyboard: [[\n    { text: '✅ Đã đăng', callback_data: `posted|${w.id}` },\n    { text: '⏭ Bỏ qua', callback_data: `skip|${w.id}` },\n  ], [\n    { text: '⏩ Đã đăng, gửi tiếp', callback_data: `postnext|${w.id}` },\n  ]] },\n} } }];"
       }
     },
     {
@@ -1455,6 +1461,7 @@
   "settings": {
     "executionOrder": "v1",
     "timezone": "Asia/Ho_Chi_Minh",
-    "saveManualExecutions": true
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "none"
   }
 }

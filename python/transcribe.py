@@ -1,8 +1,11 @@
 """Transcribe an audio file with faster-whisper.
 
-Usage: python transcribe.py <input_audio> <output_txt> <model> <language> [beam_size] [batch_size] [cpu_threads]
+Usage: python transcribe.py <input_audio> <output_txt> <model> <language> [beam_size] [batch_size] [cpu_threads] [lines_json]
+An empty language lets Whisper detect it.
 batch_size > 1 decodes several speech chunks at once (BatchedInferencePipeline), several times faster on CPU.
 cpu_threads 0 lets CTranslate2 pick (it uses only 4).
+lines_json, when given, also gets every sentence (split by word timings) with its times, and the language:
+  {"language": "en", "lines": [{"startSec": 0.0, "endSec": 3.2, "text": "..."}]}
 Events are printed to stdout as JSON lines:
   {"event": "loading", "model": "medium"}
   {"event": "loaded", "seconds": 4.2}
@@ -18,10 +21,43 @@ import time
 from faster_whisper import BatchedInferencePipeline, WhisperModel
 
 SAMPLE_RATE = 16000  # faster-whisper decodes every input to 16 kHz
+SENTENCE_ENDS = (".", "?", "!", "…", "。", "？", "！")
+CLAUSE_ENDS = (",", ";", ":", "，", "、", "；")
+PAUSE_SEC = 0.8  # a silence this long between two words ends a line
+CLAUSE_LINE_SEC = 6.0  # past this a line ends at the next comma
+MAX_LINE_SEC = 12.0  # and past this at the next word
 
 
 def emit(obj):
     print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def timed_lines(seg):
+    """Split a segment into sentences by its word timings: batched decoding
+    returns segments as long as a whole speech chunk (up to 30 s), too coarse
+    to cut a video between. Yields (start, end, text)."""
+    words = seg.words or []
+    if not words:
+        yield seg.start, seg.end, seg.text.strip()
+        return
+    current = []
+    for i, word in enumerate(words):
+        current.append(word)
+        following = words[i + 1] if i + 1 < len(words) else None
+        text = word.word.strip()
+        length = word.end - current[0].start
+        if (
+            following is None
+            or text.endswith(SENTENCE_ENDS)
+            or following.start - word.end > PAUSE_SEC
+            or (length > CLAUSE_LINE_SEC and text.endswith(CLAUSE_ENDS))
+            or length > MAX_LINE_SEC
+        ):
+            # Words carry their own leading space where the language uses spaces.
+            line = "".join(w.word for w in current).strip()
+            if line:
+                yield current[0].start, current[-1].end, line
+            current = []
 
 
 def main():
@@ -30,13 +66,15 @@ def main():
     input_path, output_path, model_name, language = sys.argv[1:5]
     tuning = [int(a) for a in sys.argv[5:8]]
     beam_size, batch_size, cpu_threads = tuning + [5, 1, 0][len(tuning):]
+    lines_path = sys.argv[8] if len(sys.argv) > 8 else ""
 
     emit({"event": "loading", "model": model_name})
     started = time.monotonic()
     model = WhisperModel(model_name, device="cpu", compute_type="int8", cpu_threads=cpu_threads)
     emit({"event": "loaded", "seconds": round(time.monotonic() - started, 1)})
 
-    options = dict(language=language or None, vad_filter=True, beam_size=beam_size)
+    # Word timings are only needed to split lines_json into sentences.
+    options = dict(language=language or None, vad_filter=True, beam_size=beam_size, word_timestamps=bool(lines_path))
     if batch_size > 1:
         pipeline = BatchedInferencePipeline(model=model)
         forward = pipeline.forward
@@ -69,16 +107,22 @@ def main():
     })
 
     lines = []
+    timed = []
     for seg in segments:
         text = seg.text.strip()
         if text:
             lines.append(text)
+            if lines_path:
+                timed.extend({"startSec": round(a, 2), "endSec": round(b, 2), "text": t} for a, b, t in timed_lines(seg))
         if total > 0:
             emit({"progress": min(seg.end / total, 1.0), "t": round(seg.end, 1), "text": text})
 
     content = " ".join(lines)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)
+    if lines_path:
+        with open(lines_path, "w", encoding="utf-8") as f:
+            json.dump({"language": info.language, "lines": timed}, f, ensure_ascii=False)
     emit({"event": "done", "segments": len(lines), "chars": len(content)})
 
 

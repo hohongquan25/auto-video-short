@@ -44,7 +44,7 @@ function ProviderFix({ meta, provider }: { meta: Meta; provider: AiProvider }) {
 }
 
 export function ProviderPicker({ value, set, meta, label = "AI dùng để viết lại" }: {
-  value: JobSettings; set: Set; meta: Meta; label?: string;
+  value: { aiProvider: AiProvider }; set: (patch: { aiProvider: AiProvider }) => void; meta: Meta; label?: string;
 }) {
   const c = meta.system.claude;
   const options: { id: AiProvider; title: string; desc: string; status: string }[] = [
@@ -406,8 +406,8 @@ export function FullVideoToggle({ value, set }: { value: JobSettings; set: Set }
 
 // ── Output format ───────────────────────────────────────────────────────────
 
-const FORMAT_ICONS: Record<VideoFormat, LucideIcon> = { tiktok: Smartphone, youtube: Monitor, original: Proportions };
-const FIT_OPTIONS: { id: FitMode; label: string; desc: string; icon: LucideIcon }[] = [
+export const FORMAT_ICONS: Record<VideoFormat, LucideIcon> = { tiktok: Smartphone, youtube: Monitor, original: Proportions };
+export const FIT_OPTIONS: { id: FitMode; label: string; desc: string; icon: LucideIcon }[] = [
   { id: "blur", label: "Nền mờ", desc: "giữ trọn video nền, lấp chỗ trống bằng nền mờ", icon: Droplet },
   { id: "crop", label: "Cắt cho đầy khung", desc: "phóng to, cắt bớt phần thừa", icon: Crop },
 ];

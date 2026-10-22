@@ -1,11 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
-import { Clapperboard, FolderOpen, LayoutList, Plus } from "lucide-react";
+import { Clapperboard, FolderOpen, LayoutList, Plus, Scissors } from "lucide-react";
 import { JobsPage } from "./pages/JobsPage";
 import { NewJobPage } from "./pages/NewJobPage";
 import { JobDetailPage } from "./pages/JobDetailPage";
 import { LibraryPage } from "./pages/LibraryPage";
+import { NewSummaryPage } from "./pages/NewSummaryPage";
+import { SummariesPage } from "./pages/SummariesPage";
+import { SummaryDetailPage } from "./pages/SummaryDetailPage";
 import { ToastProvider } from "./components/Toast";
 import { SystemStatusPanel } from "./components/SystemStatus";
 import { LibraryProvider } from "./useLibrary";
@@ -22,6 +25,7 @@ function App() {
         <NavLink to="/new" className="btn primary new-btn"><Plus size={16} /> <span>Tạo video mới</span></NavLink>
         <nav className="side-nav">
           <NavLink to="/" end><LayoutList size={17} /> <span>Danh sách video</span></NavLink>
+          <NavLink to="/summaries"><Scissors size={17} /> <span>Tóm tắt video</span></NavLink>
           <NavLink to="/library"><FolderOpen size={17} /> <span>Thư viện</span></NavLink>
         </nav>
         <span className="spacer" />
@@ -33,6 +37,9 @@ function App() {
           <Route path="/new" element={<NewJobPage />} />
           <Route path="/jobs/:id" element={<JobDetailPage />} />
           <Route path="/library" element={<LibraryPage />} />
+          <Route path="/summaries" element={<SummariesPage />} />
+          <Route path="/summaries/new" element={<NewSummaryPage />} />
+          <Route path="/summaries/:id" element={<SummaryDetailPage />} />
         </Routes>
       </main>
     </div>

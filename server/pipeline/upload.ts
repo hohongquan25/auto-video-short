@@ -6,7 +6,7 @@ import {
   a1, appendRows, columnLetter, createFolder, driveTargets, ensureTab, readRange, trashFile, uploadFile, writeRanges, type Cell,
 } from "../lib/google.js";
 import {
-  driveFileUrl, driveFolderUrl, postFor, type DriveUpload, type FullVideo, type Job, type VideoFormat,
+  driveFileUrl, driveFolderUrl, postFor, videoFileName, type DriveUpload, type FullVideo, type Job, type VideoFormat,
 } from "../types.js";
 import type { StepReporter } from "./run-job.js";
 
@@ -60,9 +60,6 @@ export function sheetRows(job: Job, drive: DriveUpload, uploadedAt: string): Cel
   });
 }
 
-/** "tiktok/part-01.mp4" → "tiktok-part-01.mp4": the job's Drive folder is flat. */
-const driveName = (path: string) => path.replace(/[\\/]/g, "-");
-
 /**
  * Update the rows of videos already listed, add the others as pending, and
  * mark the job's rows whose video is gone as removed. Returns how many rows
@@ -108,22 +105,26 @@ export async function uploadToDrive(job: Job, partsDir: string, r: StepReporter)
   const drive = job.drive;
   drive.sheetId = targets.sheetId;
 
-  const paths = jobVideos(job).flatMap(({ video }) => [video.file, ...(video.cover ? [video.cover] : [])]);
+  const files = jobVideos(job).flatMap(({ format, part, video }) => {
+    const name = videoFileName(job, format, part?.index ?? null);
+    return [{ path: video.file, name: `${name}.mp4` }, ...(video.cover ? [{ path: video.cover, name: `${name}.jpg` }] : [])];
+  });
+  const paths = files.map((f) => f.path);
   const sizes = paths.map((p) => statSync(join(partsDir, p)));
   const total = sizes.reduce((s, st) => s + st.size, 0);
   let done = 0;
   let sent = 0;
   let sentBytes = 0;
-  for (const [i, path] of paths.entries()) {
+  for (const [i, { path, name }] of files.entries()) {
     const { size, mtimeMs } = sizes[i];
     const before = drive.files[path];
     if (before?.size !== size || before.mtimeMs !== mtimeMs) {
       const started = Date.now();
-      const label = `Tải lên ${i + 1}/${paths.length}: ${driveName(path)}`;
+      const label = `Tải lên ${i + 1}/${paths.length}: ${name}`;
       r.detail(`${label} (${formatBytes(size)})`);
       const id = await uploadFile({
         file: join(partsDir, path),
-        name: driveName(path),
+        name,
         mimeType: path.endsWith(".mp4") ? "video/mp4" : "image/jpeg",
         parentId: drive.folderId,
         replaceId: before?.id,

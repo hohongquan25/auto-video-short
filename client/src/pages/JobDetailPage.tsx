@@ -1,22 +1,24 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, CircleAlert, Link2, CircleCheck, ClipboardCheck, Columns2, Copy, Download, FileSpreadsheet, FileText, FolderOpen, Hourglass,
-  LoaderCircle, Megaphone, PartyPopper, PenLine, RotateCcw, Square, Trash2, Undo2,
+  ArrowLeft, CircleAlert, Link2, CircleCheck, ClipboardCheck, Columns2, Copy, Download, FileSpreadsheet, FileText, FolderOpen,
+  LoaderCircle, Megaphone, PenLine, RotateCcw, Square, Trash2, Undo2,
 } from "lucide-react";
 import { api, jobFileUrl, type Job, type JobDetail, type JobSettings, type Step } from "../api";
 import {
   BackgroundPicker, FormatPicker, FullVideoToggle, PartLengthPicker, ReviewToggle, StylePicker, SubtitleToggle, VoicePicker, estimateParts,
 } from "../components/Pickers";
-import { Pipeline, STEP_ICONS, StatusBadge } from "../components/JobStatus";
+import { Pipeline, StatusBadge } from "../components/JobStatus";
+import { JobTitle } from "../components/JobTitle";
+import { StatusPanel } from "../components/StatusPanel";
 import { LogView } from "../components/LogView";
 import { PublishTab } from "../components/PublishTab";
 import { copyText, errorMessage, useToast } from "../components/Toast";
 import {
-  AI_PROVIDER_LABELS, STEP_LABELS, VIDEO_FORMATS, driveFolderUrl, estimateSpeechSec, formatBytes, formatChars, formatDate, formatDuration, formatSpan,
-  renderedSec, sheetUrl, videoCount,
+  AI_PROVIDER_LABELS, STEP_LABELS, VIDEO_FORMATS, driveFolderUrl, estimateSpeechSec, formatBytes, formatChars, formatDate, formatDuration,
+  renderedSec, sheetUrl, videoCount, videoFileName,
 } from "../format";
-import { isActive, jobSteps, stepEta, stepForChange, stepSeconds, totalProcessingSeconds, useNow } from "../jobState";
+import { deleteQuestion, isActive, jobSteps, stepForChange, useNow } from "../jobState";
 import { useLibrary } from "../useLibrary";
 import { usePolling } from "../usePolling";
 
@@ -24,6 +26,7 @@ type Tab = "result" | "publish" | "script" | "transcript" | "log" | "settings";
 
 const TAB_FOR_STEP: Record<Step, Tab> = {
   download: "log",
+  captions: "log",
   extract: "log",
   transcribe: "transcript",
   write: "log",
@@ -33,131 +36,14 @@ const TAB_FOR_STEP: Record<Step, Tab> = {
   render: "result",
   publish: "publish",
   upload: "log",
+  summarize: "log",
+  cut: "log",
 };
 
 function defaultTab(job: Job): Tab {
   if (job.status === "waiting_review") return "script";
   if (job.status === "done") return "result";
   return "log";
-}
-
-// ── Status panel ────────────────────────────────────────────────────────────
-
-function StatusPanel({ job, now, busy, onRetry, onApprove, onTab }: {
-  job: Job; now: number; busy: boolean;
-  onRetry: () => void; onApprove: () => void; onTab: (t: Tab) => void;
-}) {
-  if (job.status === "running" && job.step) {
-    const Icon = STEP_ICONS[job.step];
-    const elapsed = stepSeconds(job, job.step, now);
-    const eta = stepEta(job, now);
-    return (
-      <div className="status-panel running">
-        <div className="sp-head">
-          <span className="sp-icon"><Icon size={20} /></span>
-          <div className="spacer">
-            <div className="sp-kicker">Bước {jobSteps(job).indexOf(job.step) + 1}/{jobSteps(job).length}</div>
-            <div className="sp-title">{STEP_LABELS[job.step]}</div>
-          </div>
-          <div className="sp-percent">{Math.round(job.progress * 100)}%</div>
-        </div>
-        {/* Keyed by step so the bar starts fresh at 0% instead of sliding back from 100%. */}
-        <div key={job.step} className="progress lg striped"><div style={{ width: `${Math.max(2, job.progress * 100)}%` }} /></div>
-        <div className="sp-detail">{job.detail ?? "Đang xử lý…"}</div>
-        <div className="sp-stats small muted">
-          {elapsed !== null && <span>Bước này: {formatSpan(elapsed)}</span>}
-          {eta !== null && <span>Còn khoảng: <b>{formatSpan(eta)}</b></span>}
-          <span>Tổng thời gian xử lý: {formatSpan(totalProcessingSeconds(job, now))}</span>
-        </div>
-      </div>
-    );
-  }
-  if (job.status === "queued") {
-    return (
-      <div className="status-panel queued">
-        <div className="sp-head">
-          <span className="sp-icon"><Hourglass size={20} /></span>
-          <div className="spacer">
-            <div className="sp-title">Đang chờ đến lượt</div>
-            <div className="small muted">Mỗi lần chỉ chạy một job để Whisper và FFmpeg dùng hết CPU. Job sẽ tự bắt đầu.</div>
-          </div>
-          <LoaderCircle className="spin muted" />
-        </div>
-      </div>
-    );
-  }
-  if (job.status === "waiting_review") {
-    return (
-      <div className="status-panel waiting">
-        <div className="sp-head">
-          <span className="sp-icon"><ClipboardCheck size={20} /></span>
-          <div className="spacer">
-            <div className="sp-title">Kịch bản đã sẵn sàng, mời bạn duyệt</div>
-            <div className="small muted">Đọc lại, sửa chỗ chưa ưng ở tab Kịch bản, rồi bấm duyệt để tạo giọng đọc và video.</div>
-          </div>
-        </div>
-        <div className="row">
-          <button onClick={() => onTab("script")}><FileText size={15} /> Mở kịch bản</button>
-          <button className="primary" disabled={busy} onClick={onApprove}><CircleCheck size={15} /> Duyệt &amp; tạo video</button>
-        </div>
-      </div>
-    );
-  }
-  if (job.status === "failed") {
-    const stopped = job.error === "Đã dừng theo yêu cầu";
-    const [first, ...rest] = (job.error ?? "Lỗi không xác định").split("\n");
-    return (
-      <div className={`status-panel ${stopped ? "stopped" : "failed"}`}>
-        <div className="sp-head">
-          <span className="sp-icon">{stopped ? <Square size={18} /> : <CircleAlert size={20} />}</span>
-          <div className="spacer">
-            <div className="sp-title">
-              {stopped ? "Đã dừng" : "Bị lỗi"}{job.step ? ` ở bước "${STEP_LABELS[job.step]}"` : ""}
-            </div>
-            <div className="sp-error">{first}</div>
-          </div>
-        </div>
-        {rest.join("\n").trim() && (
-          <details className="error-details">
-            <summary>Chi tiết kỹ thuật</summary>
-            <pre>{rest.join("\n").trim()}</pre>
-          </details>
-        )}
-        <div className="row">
-          <button className="primary" disabled={busy} onClick={onRetry}>
-            <RotateCcw size={15} /> {stopped ? "Tiếp tục" : "Thử lại từ bước lỗi"}
-          </button>
-          <button onClick={() => onTab("log")}>Xem nhật ký</button>
-          <span className="small muted">Các bước đã xong được giữ nguyên, không phải làm lại.</span>
-        </div>
-      </div>
-    );
-  }
-  const took = totalProcessingSeconds(job, now);
-  return (
-    <div className="status-panel done">
-      <div className="sp-head">
-        <span className="sp-icon"><PartyPopper size={20} /></span>
-        <div className="spacer">
-          <div className="sp-title">
-            Hoàn thành {videoCount(job.outputs)} video{job.outputs.length > 1 ? ` (${job.outputs.map((o) => VIDEO_FORMATS[o.format].label).join(" + ")})` : ""},
-            {" "}dài {formatDuration(renderedSec(job.outputs))}
-          </div>
-          {took > 0 && <div className="small muted">Thời gian xử lý {formatSpan(took)}</div>}
-        </div>
-        <div className="row">
-          <button onClick={() => onTab("result")}>Xem video</button>
-          {job.drive && (
-            <>
-              <a className="btn" href={driveFolderUrl(job.drive.folderId)} target="_blank" rel="noreferrer"><FolderOpen size={15} /> Drive</a>
-              <a className="btn" href={sheetUrl(job.drive.sheetId)} target="_blank" rel="noreferrer"><FileSpreadsheet size={15} /> Sheet</a>
-            </>
-          )}
-          {job.publish && <button className="primary" onClick={() => onTab("publish")}><Megaphone size={15} /> Đăng bài</button>}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
@@ -177,15 +63,13 @@ function ResultTab({ job }: { job: Job }) {
     <>
       {job.outputs.map((o) => {
         const name = VIDEO_FORMATS[o.format].label;
-        // File names say the format only when there is more than one.
-        const prefix = several ? `${job.title} - ${name}` : job.title;
         const videos = [
-          ...o.parts.map((p) => ({ ...p, label: `Phần ${p.index}/${o.parts.length}`, what: `phần ${p.index}`, download: `${prefix} - Phan ${p.index}.mp4` })),
+          ...o.parts.map((p) => ({ ...p, label: `Phần ${p.index}/${o.parts.length}`, what: `phần ${p.index}`, download: `${videoFileName(job, o.format, p.index)}.mp4` })),
           ...(o.fullVideo ? [{
             ...o.fullVideo,
             label: o.parts.length ? "Bản đầy đủ (không cắt)" : "Cả truyện, không chia phần",
             what: "bản đầy đủ",
-            download: o.parts.length ? `${prefix} - Day du.mp4` : `${prefix}.mp4`,
+            download: `${videoFileName(job, o.format, null)}.mp4`,
           }] : []),
         ];
         return (
@@ -375,9 +259,13 @@ export function JobDetailPage() {
   useEffect(() => {
     if (draft === null && data?.script != null) setDraft(data.script);
   }, [data?.script, draft]);
+  // A summary job opened by a story link (a webhook, an old bookmark) goes to its own page.
+  useEffect(() => {
+    if (job?.kind === "summary") navigate(`/summaries/${job.id}`, { replace: true });
+  }, [job?.kind, job?.id, navigate]);
 
   if (loadError && !data) return <div className="alert error"><CircleAlert size={16} />{loadError}</div>;
-  if (!job || !data) return <div className="loading"><LoaderCircle className="spin" /> Đang tải…</div>;
+  if (!job || !data || job.kind === "summary") return <div className="loading"><LoaderCircle className="spin" /> Đang tải…</div>;
 
   const currentTab: Tab = tab ?? defaultTab(job);
   const scriptDirty = draft !== null && draft !== data.script;
@@ -420,8 +308,8 @@ export function JobDetailPage() {
       <Link to="/" className="back-link small"><ArrowLeft size={14} /> Danh sách video</Link>
 
       <div className="page-head">
-        <div className="min-w-0">
-          <h1 className="clamp-2">{job.title}</h1>
+        <div className="min-w-0 grow">
+          <JobTitle job={job} onRenamed={refresh} />
           <div className="meta-chips small muted">
             <StatusBadge status={job.status} />
             <span>Tạo {formatDate(job.createdAt)}</span>
@@ -443,7 +331,7 @@ export function JobDetailPage() {
           <button
             className="danger" disabled={busy}
             onClick={() => {
-              if (!confirm("Xoá job này cùng toàn bộ file đã tạo?")) return;
+              if (!confirm(deleteQuestion(job))) return;
               void act(async () => {
                 await api.deleteJob(job.id);
                 navigate("/");
@@ -458,8 +346,39 @@ export function JobDetailPage() {
       <div className="card pipeline-card">
         <Pipeline job={job} now={now} onSelect={(s) => setTab(TAB_FOR_STEP[s])} />
         <StatusPanel
-          job={job} now={now} busy={busy} onTab={setTab} onApprove={approve}
+          job={job} now={now} busy={busy} onLog={() => setTab("log")}
           onRetry={() => act(() => api.rerun(job.id), "Đã cho chạy lại")}
+          waiting={(
+            <div className="status-panel waiting">
+              <div className="sp-head">
+                <span className="sp-icon"><ClipboardCheck size={20} /></span>
+                <div className="spacer">
+                  <div className="sp-title">Kịch bản đã sẵn sàng, mời bạn duyệt</div>
+                  <div className="small muted">Đọc lại, sửa chỗ chưa ưng ở tab Kịch bản, rồi bấm duyệt để tạo giọng đọc và video.</div>
+                </div>
+              </div>
+              <div className="row">
+                <button onClick={() => setTab("script")}><FileText size={15} /> Mở kịch bản</button>
+                <button className="primary" disabled={busy} onClick={approve}><CircleCheck size={15} /> Duyệt &amp; tạo video</button>
+              </div>
+            </div>
+          )}
+          done={{
+            title: <>
+              Hoàn thành {videoCount(job.outputs)} video{job.outputs.length > 1 ? ` (${job.outputs.map((o) => VIDEO_FORMATS[o.format].label).join(" + ")})` : ""},
+              {" "}dài {formatDuration(renderedSec(job.outputs))}
+            </>,
+            actions: <>
+              <button onClick={() => setTab("result")}>Xem video</button>
+              {job.drive && (
+                <>
+                  <a className="btn" href={driveFolderUrl(job.drive.folderId)} target="_blank" rel="noreferrer"><FolderOpen size={15} /> Drive</a>
+                  <a className="btn" href={sheetUrl(job.drive.sheetId)} target="_blank" rel="noreferrer"><FileSpreadsheet size={15} /> Sheet</a>
+                </>
+              )}
+              {job.publish && <button className="primary" onClick={() => setTab("publish")}><Megaphone size={15} /> Đăng bài</button>}
+            </>,
+          }}
         />
       </div>
 

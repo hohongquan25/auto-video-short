@@ -1,8 +1,11 @@
-export const STEPS = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish", "upload"] as const;
+export const STEPS = [
+  "download", "captions", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish", "upload", "summarize", "cut",
+] as const;
 export type Step = (typeof STEPS)[number];
 
 export const STEP_LABELS: Record<Step, string> = {
   download: "Tải từ link",
+  captions: "Lấy phụ đề",
   extract: "Tách audio",
   transcribe: "Nhận dạng giọng nói",
   write: "AI viết truyện",
@@ -12,6 +15,8 @@ export const STEP_LABELS: Record<Step, string> = {
   render: "Dựng video",
   publish: "Gợi ý đăng bài",
   upload: "Lưu lên Drive",
+  summarize: "AI tóm tắt",
+  cut: "Cắt ghép video",
 };
 
 export type AiProvider = "claude" | "gemini";
@@ -117,6 +122,8 @@ export interface PublishKit {
   niche: { genre: string; audience: string; similar: string[]; insight: string } | null;
   /** Alternative post titles, best first. */
   titles: string[];
+  /** The story's own short name, for file names; missing from kits written before it was asked for. */
+  storyName?: string | null;
   /** A few punchy words printed on the covers. */
   coverText: string;
   /** Post description, without hashtags. */
@@ -148,6 +155,52 @@ export function postFor(kit: PublishKit, format: VideoFormat, part: { index: num
   return { title: null, description: [title, hook, kit.hashtags.join(" ")].filter(Boolean).join("\n\n"), tags: [] };
 }
 
+/** "Ba Tiếng Gõ Cửa!" → "ba_tieng_go_cua": no marks, lowercase, words joined by "_". */
+export function fileSlug(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/[đĐ]/g, "d").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+/** Past this a long title is cut after a whole word, keeping file names well inside every system's limit. */
+const FILE_TITLE_CHARS = 80;
+const cutTitle = (slug: string) =>
+  slug.length <= FILE_TITLE_CHARS ? slug : slug.slice(0, FILE_TITLE_CHARS + 1).replace(/_[^_]*$/, "").slice(0, FILE_TITLE_CHARS);
+
+/** Tags in brackets, hashtags, credits, and view or reaction counts, as source videos put in their titles. */
+const TITLE_TAGS = /\[[^\]]*\]|【[^】]*】|\([^)]*\)|#\S*|\b(cre|credit|nguồn|source)\s*:.*$|\d[\d.,]*\s*[kmb]?\s*(views?|lượt xem|reactions?|likes?|lượt thích|comments?|bình luận|shares?)/giu;
+/** Between the pieces of a title, and between its sentences when it is a whole teaser. */
+const TITLE_SEPARATORS = /\s+[-–—]\s+|\s*[|·•]\s*|[:.]\s+/u;
+/** A piece of a title that says nothing about the story: a number, its length, "full", a part number, the channel or the genre. */
+const TITLE_NOISE = /^(\d+|full( bộ)?|trọn bộ|\d+\s*(phút|giờ|tiếng)|(tập|phần|part|ep)\s*\d+|.*\b(audio|official|channel|radio|podcast)\b.*|truyện (ngắn|audio|ma|hay|kể|kinh dị|ngôn tình|cổ tích|trinh thám)\b.*)$/iu;
+
+/**
+ * What a source video's title says the story is called: "[FULL] Mẹ bạn cùng
+ * phòng - SHABI AUDIO" → "Mẹ bạn cùng phòng", "2 phút - Người đàn ông và quả
+ * dừa - Bài học…" → "Người đàn ông và quả dừa". The first piece that is not
+ * noise wins, as the story's name usually comes first and the channel last.
+ */
+export function storyNameFromTitle(title: string): string {
+  const pieces = title.replace(TITLE_TAGS, " ").split(TITLE_SEPARATORS).map((s) => s.replace(/["“”'‘’]/g, "").trim()).filter(Boolean);
+  return pieces.find((s) => !TITLE_NOISE.test(s)) ?? pieces.join(" ");
+}
+
+/**
+ * Name, without extension, of one video of a job and of its cover, on Drive
+ * and when downloaded: "ba_tieng_go_cua_phan_1", or "ba_tieng_go_cua_day_du"
+ * for the uncut story next to parts. It is the short name the AI gave the
+ * story, or else the job title without its noise. The format is named only
+ * when the job has several, which share one folder.
+ */
+export function videoFileName(job: Pick<Job, "title" | "outputs" | "publish">, format: VideoFormat, part: number | null): string {
+  const title = cutTitle(fileSlug(job.publish?.storyName || storyNameFromTitle(job.title))) || cutTitle(fileSlug(job.title)) || "video";
+  const hasParts = job.outputs.some((o) => o.format === format && o.parts.length > 0);
+  const rest = [
+    job.outputs.length > 1 ? VIDEO_FORMATS[format].label : "",
+    part ? `Phần ${part}` : hasParts ? "Đầy đủ" : "",
+  ];
+  return [title, ...rest.map(fileSlug)].filter(Boolean).join("_");
+}
+
 export const videoCount = (outputs: JobOutput[]): number =>
   outputs.reduce((n, o) => n + o.parts.length + (o.fullVideo ? 1 : 0), 0);
 
@@ -173,8 +226,12 @@ export interface StepTiming {
   endedAt: string | null;
 }
 
+/** A story job turns a recording or topic into narrated videos; a summary job cuts a long video down to what matters. */
+export type JobKind = "story" | "summary";
+
 export interface Job {
   id: string;
+  kind: JobKind;
   title: string;
   /** Empty until a job created from a link has been downloaded. */
   sourceFile: string;
@@ -204,6 +261,68 @@ export interface Job {
   callbackUrl: string | null;
   /** Where the videos went on Google Drive; null until the upload step has run. */
   drive: DriveUpload | null;
+  /** Everything a summary job knows and makes; null for story jobs, whose `settings` it replaces. */
+  summary: SummaryJob | null;
+}
+
+/** Languages offered for what a video says, its summary and its subtitles; Whisper and the AIs know many more. */
+export const LANGUAGES: Record<string, string> = {
+  vi: "Tiếng Việt", en: "Tiếng Anh", zh: "Tiếng Trung", ja: "Tiếng Nhật", ko: "Tiếng Hàn", th: "Tiếng Thái",
+  id: "Tiếng Indonesia", ms: "Tiếng Mã Lai", fr: "Tiếng Pháp", de: "Tiếng Đức", es: "Tiếng Tây Ban Nha",
+  pt: "Tiếng Bồ Đào Nha", ru: "Tiếng Nga", hi: "Tiếng Hindi", ar: "Tiếng Ả Rập",
+};
+
+/** "en", "en-US", "en-orig" → "Tiếng Anh"; a language not in the list keeps its code. */
+export const languageLabel = (code: string): string => LANGUAGES[code.split("-")[0].toLowerCase()] ?? code;
+
+export interface SummarySettings {
+  /** Which AI picks the passages and writes the summary. */
+  aiProvider: AiProvider;
+  /** Wanted length of the cut video. */
+  targetSec: number;
+  /** What the video speaks, a code from LANGUAGES; "" lets the captions or Whisper tell. */
+  language: string;
+  /** Read the video's own captions when it has some, instead of transcribing its speech. */
+  useCaptions: boolean;
+  /** Burned-in subtitles: "none", "source" (what is said, as said), or a language code to translate them into. */
+  subtitles: string;
+  /** Language the written summary is in. */
+  summaryLanguage: string;
+  format: VideoFormat;
+  fit: FitMode;
+}
+
+export const SUMMARY_DEFAULTS: SummarySettings = {
+  aiProvider: "claude", targetSec: 300, language: "", useCaptions: true, subtitles: "none", summaryLanguage: "vi", format: "original", fit: "blur",
+};
+
+/** One passage of the source kept in the cut, in the source's seconds. */
+export interface SummaryClip {
+  startSec: number;
+  endSec: number;
+  /** What the passage is about, in the summary's language. */
+  note: string;
+}
+
+export interface SummaryResult {
+  title: string;
+  text: string;
+  keyPoints: string[];
+  clips: SummaryClip[];
+  /** The cut video in the job folder; null until the cut step has made it. */
+  file: string | null;
+  durationSec: number | null;
+  sizeBytes: number | null;
+}
+
+export interface SummaryJob {
+  settings: SummarySettings;
+  /** Where the timed transcript came from; null until there is one. */
+  transcriptFrom: "captions" | "speech" | null;
+  /** Language of the transcript, as its captions or Whisper report it. */
+  language: string | null;
+  /** The AI's summary and passages, then the cut video; null until the summarize step. */
+  result: SummaryResult | null;
 }
 
 /** A file the upload step sent to Drive, with the size and time of the local file it was sent from. */

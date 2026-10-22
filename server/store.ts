@@ -109,6 +109,8 @@ function migrateJob(job: Job): Job {
   job.sourceInfo ??= null;
   job.sourceTopic ??= null;
   job.drive ??= null;
+  job.kind ??= "story";
+  job.summary ??= null;
   return job;
 }
 

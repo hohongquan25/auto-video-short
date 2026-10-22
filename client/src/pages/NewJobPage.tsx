@@ -15,6 +15,7 @@ import { DEFAULT_TOPIC, TopicSource, topicProblem } from "../components/TopicSou
 import { errorMessage, useToast } from "../components/Toast";
 import { AI_PROVIDER_LABELS, VIDEO_FORMATS, formatBytes, formatDuration, formatPlan, stripExt } from "../format";
 import { useLibrary } from "../useLibrary";
+import { useMediaInfo } from "../useMediaInfo";
 
 const WIZARD = [
   { key: "source", label: "Nguồn truyện", icon: FileAudio },
@@ -25,27 +26,6 @@ const WIZARD = [
 ] as const;
 
 const MEDIA_ACCEPT = "audio/*,video/*,.mkv";
-
-/** Local preview URL + duration of the chosen file, read by the browser. */
-function useMediaInfo(file: File | null) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [duration, setDuration] = useState<number | null>(null);
-  useEffect(() => {
-    setDuration(null);
-    if (!file) return setUrl(null);
-    const u = URL.createObjectURL(file);
-    setUrl(u);
-    const probe = document.createElement(file.type.startsWith("video") ? "video" : "audio");
-    probe.preload = "metadata";
-    probe.onloadedmetadata = () => Number.isFinite(probe.duration) && setDuration(probe.duration);
-    probe.src = u;
-    return () => {
-      probe.removeAttribute("src");
-      URL.revokeObjectURL(u);
-    };
-  }, [file]);
-  return { url, duration };
-}
 
 export function NewJobPage() {
   const navigate = useNavigate();

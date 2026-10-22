@@ -32,6 +32,7 @@ const kitSchema = z.object({
     insight: z.string().trim().default(""),
   }).nullish(),
   titles: z.array(z.string().trim().min(1)).min(1),
+  storyName: z.string().trim().default(""),
   coverText: z.string().trim().min(1),
   caption: z.string().trim().min(1),
   hashtags: z.array(z.string()).min(1),
@@ -62,6 +63,7 @@ export function parseKit(text: string, by: string, partCount: number, youtube: b
     by,
     niche: k.niche ? { ...k.niche, similar: k.niche.similar.slice(0, 8) } : null,
     titles: k.titles.slice(0, 5),
+    storyName: k.storyName || null,
     coverText: k.coverText,
     caption: k.caption,
     hashtags: cleanHashtags(k.hashtags),
@@ -130,6 +132,7 @@ ${research}
 Sau khi tìm hiểu xong, câu trả lời cuối cùng chỉ gồm DUY NHẤT một JSON hợp lệ, không markdown, không lời dẫn, theo mẫu:
 {"niche": {"genre": "thể loại và ngách cụ thể", "audience": "ai hay nghe ngách này, nghe vào lúc nào", "similar": ["tên vài truyện, series hoặc kênh cùng ngách đang được xem nhiều"], "insight": "một đến hai câu: video thành công trong ngách này đặt tên, viết mô tả và dùng hashtag ra sao"},
  "titles": ["ba tiêu đề khác nhau, mỗi tiêu đề dưới 70 ký tự"],
+ "storyName": "tên ngắn của truyện để đặt tên file video: từ ba đến tám chữ, nói đúng nội dung truyện, viết có dấu; bỏ tên kênh, số lượt xem, thời lượng, số tập, chữ FULL, tên thể loại và lời giật tít",
  "coverText": "chữ in to trên ảnh bìa: từ ba đến bảy chữ, gắn với chi tiết đắt nhất của truyện, không dấu câu thừa",
  "caption": "mô tả một đến hai câu khơi gợi tò mò, có từ khoá của ngách, có thể kèm một đến hai emoji, không chứa hashtag",
  "hashtags": ["mười đến mười ba hashtag theo ba tầng ở trên"],
@@ -194,7 +197,7 @@ export async function preparePublish(opts: {
         kit = await attempt(makeWriter(provider, KIT_SYSTEM, signal), false);
       }
       if (kit.niche) r.log(`Ngách truyện: ${kit.niche.genre}${kit.niche.similar.length ? ` · cùng ngách: ${kit.niche.similar.join(", ")}` : ""}`);
-      r.log(`${kit.by} gợi ý: "${kit.titles[0]}" · ${kit.hashtags.join(" ")}`, "success");
+      r.log(`${kit.by} gợi ý: "${kit.titles[0]}"${kit.storyName ? ` · tên file "${kit.storyName}"` : ""} · ${kit.hashtags.join(" ")}`, "success");
     } catch (err) {
       if (signal.aborted) throw err;
       kit = fallbackKit(title, partCount, youtube);

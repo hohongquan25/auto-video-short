@@ -34,6 +34,12 @@ describe("publish kit", () => {
     expect(kit.hashtags).toEqual(["#x"]);
     expect(kit.youtube).toBeNull();
     expect(kit.niche).toBeNull();
+    expect(kit.storyName).toBeNull();
+  });
+
+  it("keeps the short name the AI gave the story", () => {
+    const reply = '{"titles":["A"],"storyName":" Ba tiếng gõ cửa ","coverText":"B","caption":"C","hashtags":["x"]}';
+    expect(parseKit(reply, "AI", 0, false).storyName).toBe("Ba tiếng gõ cửa");
   });
 
   it("keeps the niche the AI found", () => {

@@ -1,18 +1,28 @@
 import { useEffect, useState } from "react";
-import type { Job, JobSettings, Step } from "./api";
+import type { Job, JobSettings, Step, SummarySettings } from "./api";
 
-export const STEPS: Step[] = ["download", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish", "upload"];
+export const STEPS: Step[] = [
+  "download", "captions", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish", "upload", "summarize", "cut",
+];
 
 /** Steps that turn a recording into a script; a topic job's AI writes the script instead. */
 const MEDIA_STEPS: Step[] = ["download", "extract", "transcribe", "rewrite"];
 
+/** Steps of a summary job, and the ones only it has. */
+const SUMMARY_STEPS: Step[] = ["download", "captions", "extract", "transcribe", "summarize", "cut"];
+const SUMMARY_ONLY: Step[] = ["captions", "summarize", "cut"];
+
 /** The steps shown for a job: "download" only exists for jobs created from a link. */
-export const jobSteps = (job: Job): Step[] => STEPS.filter((s) =>
-  job.sourceTopic ? !MEDIA_STEPS.includes(s) : s !== "write" && (s !== "download" || job.sourceUrl));
+export const jobSteps = (job: Job): Step[] => (job.kind === "summary" ? SUMMARY_STEPS : STEPS).filter((s) =>
+  (s !== "download" || job.sourceUrl) &&
+  (job.kind === "summary" || (!SUMMARY_ONLY.includes(s) && (job.sourceTopic ? !MEDIA_STEPS.includes(s) : s !== "write"))));
 
 export type StepState = "done" | "active" | "queued" | "waiting" | "error" | "skipped" | "pending";
 
 export function stepState(job: Job, step: Step): StepState {
+  const summary = job.summary;
+  if (summary && step === "captions" && !summary.settings.useCaptions) return "skipped";
+  if (summary?.transcriptFrom === "captions" && (step === "extract" || step === "transcribe")) return "skipped";
   if (step === "review" && !job.settings.reviewBeforeTts) return "skipped";
   if (step === "download" && !job.sourceUrl) return "skipped";
   // Only runs when Google Drive is set up on the server.
@@ -71,7 +81,20 @@ export function stepForChange(job: Job, after: JobSettings): Step | null {
   return null;
 }
 
+/** Earliest step of a summary job whose output is invalidated by a settings change. */
+export function summaryStepForChange(before: SummarySettings, after: SummarySettings): Step | null {
+  if (before.language !== after.language || before.useCaptions !== after.useCaptions) return "captions";
+  if (before.aiProvider !== after.aiProvider || before.targetSec !== after.targetSec || before.summaryLanguage !== after.summaryLanguage) return "summarize";
+  if (before.subtitles !== after.subtitles || before.format !== after.format || (after.format !== "original" && before.fit !== after.fit)) return "cut";
+  return null;
+}
+
 export const isActive = (job: Job) => job.status === "running" || job.status === "queued";
+
+/** Asked before deleting a job. Its Drive copies and Sheet rows are left alone, so pending ones still get posted. */
+export const deleteQuestion = (job: Job): string =>
+  `Xoá "${job.title}" cùng toàn bộ file đã tạo?` +
+  (job.drive ? "\n\nVideo trên Google Drive và các dòng trong Google Sheet vẫn giữ nguyên: video nào đang chờ đăng thì n8n vẫn đăng." : "");
 
 /** Current time, re-rendered every `ms` while `enabled`. */
 export function useNow(ms = 1000, enabled = true): number {

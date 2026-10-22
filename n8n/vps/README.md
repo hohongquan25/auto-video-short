@@ -86,5 +86,7 @@ Kết nối TikTok không đổi gì: token nằm trong tab `TikTokAuth` của S
 | Cập nhật n8n | sửa `N8N_VERSION` (hoặc để `latest`), rồi `docker compose pull && docker compose up -d` |
 | Sao lưu | `docker run --rm -v n8n_n8n_data:/data -v /opt/n8n:/backup alpine tar czf /backup/n8n_data-$(date +%F).tgz -C /data .` rồi tải file về |
 | Chạy workflow từ dòng lệnh | `docker compose exec n8n n8n execute --id <id>` |
+| Xem ổ đĩa | `df -h /`. Đầy thì báo lỗi `ENOSPC`. Thủ phạm thường là các khúc video tạm n8n tải từ Drive khi gửi video, nằm ở `/var/lib/docker/volumes/n8n_n8n_data/_data/storage/workflows/<id>/executions/` |
+| Dọn ổ đĩa | `/opt/n8n/don-dep.sh` (chép từ `don-dep.sh`): xoá khúc video tạm của các lượt đã chạy xong (video gốc vẫn ở Drive) và thu gọn log hệ thống. Cron `/etc/cron.d/n8n-don-dep` chạy nó lúc 3h sáng mỗi 3 ngày: `0 3 */3 * * root /opt/n8n/don-dep.sh >> /var/log/n8n-don-dep.log 2>&1` |
 
 Workflow cũ `Video kể chuyện tự động` (trong `F:\n8n`) cần ffmpeg và node Execute Command. Story Studio đã thay nó nên bộ cài này không kèm ffmpeg. Nếu vẫn cần, dùng lại `F:\n8n\Dockerfile` và thêm `NODES_EXCLUDE=[]`.

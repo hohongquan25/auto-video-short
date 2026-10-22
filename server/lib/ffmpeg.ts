@@ -229,6 +229,59 @@ export async function stillFrame(
   ], { totalSec: null, signal }, cwd);
 }
 
+/** Subtitle codecs that hold text; picture subtitles (DVD, Blu-ray) cannot be read as words. */
+const TEXT_SUBTITLE_CODECS = new Set(["subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text"]);
+
+/** The text subtitle tracks inside a video file, by stream index, with their language tags. */
+export async function probeSubtitleTracks(file: string): Promise<{ index: number; language: string | null }[]> {
+  const { stdout } = await run(config.ffprobe, [
+    "-v", "error",
+    "-select_streams", "s",
+    "-show_entries", "stream=index,codec_name:stream_tags=language",
+    "-of", "json",
+    file,
+  ]);
+  const streams = (JSON.parse(stdout) as { streams?: { index: number; codec_name?: string; tags?: { language?: string } }[] }).streams ?? [];
+  return streams.filter((s) => TEXT_SUBTITLE_CODECS.has(s.codec_name ?? "")).map((s) => ({ index: s.index, language: s.tags?.language ?? null }));
+}
+
+/** Write subtitle stream `index` of `file` as SRT. */
+export async function extractSubtitleTrack(file: string, index: number, outSrt: string, signal?: AbortSignal): Promise<void> {
+  await ffmpeg(["-y", "-i", resolve(file), "-map", `0:${index}`, "-c:s", "srt", resolve(outSrt)], { totalSec: null, signal });
+}
+
+/** Sound fades in and out over this at each end of a cut clip, so joins do not click. */
+const CLIP_FADE_SEC = 0.04;
+
+/**
+ * Cut `lengthSec` from `startSec` of `source` into its own MP4: framed like
+ * the rendered videos, or kept as it is (even-sized) when `frame` is null,
+ * with `subtitles` (an .ass file timed from the clip's start) burned in.
+ * Clips cut from one source with the same options share one encoding, so
+ * concatVideos joins them without re-encoding.
+ */
+export async function cutClip(
+  source: string, startSec: number, lengthSec: number, outFile: string,
+  opts: { frame: OutputFrame | null; subtitles?: string }, p?: FfmpegProgress,
+): Promise<void> {
+  const sub = subtitleFilter(opts.subtitles);
+  const video = [
+    opts.frame ? frameFilter(opts.frame) : "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1",
+    `fps=${OUTPUT_FPS}`, "format=yuv420p", sub.filter,
+  ].filter(Boolean).join(",");
+  const fade = Math.min(CLIP_FADE_SEC, lengthSec / 4).toFixed(3);
+  await ffmpeg([
+    "-y",
+    "-ss", startSec.toFixed(3), "-t", lengthSec.toFixed(3), "-i", resolve(source),
+    "-vf", video,
+    "-af", `afade=t=in:d=${fade},afade=t=out:st=${Math.max(0, lengthSec - Number(fade)).toFixed(3)}:d=${fade}`,
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "160k", "-ar", "44100",
+    "-movflags", "+faststart",
+    resolve(outFile),
+  ], p, sub.cwd);
+}
+
 /**
  * Join MP4s that share one encoding (the rendered parts) without re-encoding.
  * Inputs are file names inside `dir`, where ffmpeg runs and the list is written.

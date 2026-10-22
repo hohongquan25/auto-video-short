@@ -121,6 +121,16 @@ Muốn mọi job (kể cả job tạo từ giao diện) đều báo về một w
 | Duyệt và chạy tiếp | `POST /api/jobs/{id}/continue` |
 | Chạy lại (từ bước lỗi hoặc một bước) | `POST /api/jobs/{id}/rerun` với `{}` hoặc `{"fromStep": "tts"}` |
 | Dừng / xoá | `POST /api/jobs/{id}/stop` / `DELETE /api/jobs/{id}` |
+| Đổi tên | `PATCH /api/jobs/{id}` với `{"title": "..."}` |
+| Tóm tắt video | `POST /api/summaries`: file video ở trường `media` (kèm phụ đề `.srt`/`.vtt` ở `captions` nếu có) hoặc link ở `url`, cài đặt ở `settings` (xem dưới) |
+
+Cài đặt tóm tắt, trường nào bỏ trống thì lấy mặc định:
+
+```json
+{"targetSec": 300, "language": "", "useCaptions": true, "subtitles": "none", "summaryLanguage": "vi", "format": "original", "fit": "blur", "aiProvider": "claude"}
+```
+
+`language` là ngôn ngữ video nói (`""` để tự nhận), `subtitles` là `none`, `source` (theo lời nói) hoặc mã ngôn ngữ để dịch phụ đề sang (`vi`, `en`…). Job tóm tắt dùng chung các API xem, chạy lại, dừng, xoá ở trên. Khi xong, `links.summary` có link video rút gọn và bản tóm tắt; chạy lại với cài đặt mới: `POST /api/jobs/{id}/rerun` với `{"fromStep": "summarize", "summary": {...}}`.
 
 Webhook bị lỗi (n8n tắt…) được thử lại 3 lần rồi ghi cảnh báo vào nhật ký job. Job vẫn hoàn thành bình thường.
 

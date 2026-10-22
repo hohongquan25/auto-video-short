@@ -1,6 +1,6 @@
 import { Compass, Copy, Download, ImageIcon, RotateCcw, Sparkles, TriangleAlert } from "lucide-react";
 import { jobFileUrl, type Job, type JobPart } from "../api";
-import { VIDEO_FORMATS, formatDuration, postFor } from "../format";
+import { VIDEO_FORMATS, formatDuration, postFor, videoFileName } from "../format";
 import { isActive } from "../jobState";
 import { copyText, useToast } from "./Toast";
 
@@ -96,7 +96,7 @@ export function PublishTab({ job, busy, onRegenerate }: { job: Job; busy: boolea
             <div className="posts">
               {videos.map(({ video, label, part }) => {
                 const post = postFor(kit, o.format, part);
-                const base = `${job.title}${job.outputs.length > 1 ? ` - ${name}` : ""}${part ? ` - Phan ${part.index}` : ""}`;
+                const base = videoFileName(job, o.format, part?.index ?? null);
                 return (
                   <div className="post" key={video.file}>
                     <div className={`post-cover ${tall ? "tall" : ""}`}>

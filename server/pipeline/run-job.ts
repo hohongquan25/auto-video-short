@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { extractAudio, probeDuration } from "../lib/ffmpeg.js";
-import { downloadAudio } from "../lib/ytdlp.js";
+import { downloadAudio, type DownloadProgress, type RetryHandler } from "../lib/ytdlp.js";
 import { creepProgress } from "../lib/progress.js";
 import { estimateSpeechSec, formatBytes, formatChars, formatDuration } from "../lib/format.js";
 import { getBackground, getBrand, getStyle, jobDir, saveJob } from "../store.js";
@@ -33,8 +33,17 @@ export const artifacts = (id: string) => {
     ttsDir: join(dir, "tts"),
     partsDir: join(dir, "parts"),
     publishKit: join(dir, "publish.json"),
+    /** A summary job's timed transcript: {from, language, lines}. */
+    lines: join(dir, "lines.json"),
+    /** The AI's summary and chosen passages. */
+    summaryPlan: join(dir, "summary.json"),
+    clipsDir: join(dir, "clips"),
+    summaryVideo: join(dir, "summary.mp4"),
   };
 };
+
+/** Captions a summary job fetched or took out of its video (captions.<lang>.vtt, captions.srt), not ones the user uploaded. */
+const isFetchedCaptions = (name: string) => /^captions\.[\w.-]+$/.test(name);
 
 /** Remove everything produced by `fromStep` and later steps. */
 export function resetFromStep(job: Job, fromStep: Step): void {
@@ -46,8 +55,23 @@ export function resetFromStep(job: Job, fromStep: Step): void {
     rmSync(join(a.dir, job.sourceFile), { force: true });
     job.sourceFile = "";
   }
+  const summary = job.summary;
+  if (summary && at("captions")) {
+    for (const name of readdirSync(a.dir).filter(isFetchedCaptions)) rmSync(join(a.dir, name), { force: true });
+    rmSync(a.lines, { force: true });
+    summary.transcriptFrom = null;
+    summary.language = null;
+  }
   if (at("extract")) rmSync(a.audio, { force: true });
-  if (at("transcribe")) rmSync(a.transcript, { force: true });
+  if (at("transcribe")) {
+    rmSync(a.transcript, { force: true });
+    // Lines read from captions are the captions step's to remove.
+    if (summary?.transcriptFrom === "speech") {
+      rmSync(a.lines, { force: true });
+      summary.transcriptFrom = null;
+      summary.language = null;
+    }
+  }
   if (at("write")) rmSync(a.storyDir, { recursive: true, force: true });
   if (at("rewrite")) {
     rmSync(a.rewriteDir, { recursive: true, force: true });
@@ -66,6 +90,15 @@ export function resetFromStep(job: Job, fromStep: Step): void {
       delete v.cover;
     }
     job.publish = null;
+  }
+  if (summary && at("summarize")) {
+    rmSync(a.summaryPlan, { force: true });
+    summary.result = null;
+  }
+  if (summary && at("cut")) {
+    rmSync(a.clipsDir, { recursive: true, force: true });
+    rmSync(a.summaryVideo, { force: true });
+    if (summary.result) Object.assign(summary.result, { file: null, durationSec: null, sizeBytes: null });
   }
   for (const s of STEPS) if (at(s)) delete job.timings[s];
 }
@@ -96,12 +129,33 @@ export interface StepReporter {
   signal: AbortSignal;
 }
 
-/**
- * Run (or resume) a job. Every step skips work whose output already exists,
- * so calling this again after a failure continues from the failed step.
- */
-export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
-  const a = artifacts(job.id);
+/** Show a link download's progress and retries in the job. */
+export function downloadHandlers(r: StepReporter): { onProgress: (p: DownloadProgress) => void; onRetry: RetryHandler } {
+  return {
+    onProgress: (p) => {
+      if (p.fraction !== null) r.progress(p.fraction);
+      const speed = p.speedBps ? ` · ${formatBytes(p.speedBps)}/s` : "";
+      const eta = p.etaSec !== null ? ` · còn ${formatDuration(p.etaSec)}` : "";
+      r.detail(`Đã tải ${formatBytes(p.downloadedBytes)}${p.fraction !== null ? ` (${Math.round(p.fraction * 100)}%)` : ""}${speed}${eta}`);
+    },
+    onRetry: (err, attempt, total, delayMs) => {
+      r.log(`Tải lỗi "${err.message.split("\n")[0].slice(0, 200)}", thử lại lần ${attempt}/${total} sau ${delayMs / 1000}s`, "warn");
+      r.detail(`Chờ ${delayMs / 1000}s rồi thử lại…`);
+    },
+  };
+}
+
+/** How a running job's steps report back: the reporter, plus entering a step and timing it. */
+export interface RunContext {
+  r: StepReporter;
+  /** Start `step`: close the previous one, reset the bar and log `message`. */
+  enter(step: Step, message: string): void;
+  /** How long `step` has run so far, for log lines. */
+  stepElapsed(step: Step): string;
+  save(force?: boolean): void;
+}
+
+export function runContext(job: Job, signal: AbortSignal): RunContext {
   let lastSaved = 0;
 
   let creep: { from: number; target: number; etaSec: number; startedAt: number } | null = null;
@@ -163,6 +217,16 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
     const t = job.timings[step];
     return t ? formatDuration((Date.now() - Date.parse(t.startedAt)) / 1000) : "?";
   };
+  return { r, enter, stepElapsed, save };
+}
+
+/**
+ * Run (or resume) a job. Every step skips work whose output already exists,
+ * so calling this again after a failure continues from the failed step.
+ */
+export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
+  const { r, enter, stepElapsed, save } = runContext(job, signal);
+  const a = artifacts(job.id);
 
   // ── 0. Download (jobs created from a link) ──────────────────────────────
   if (job.sourceUrl && !job.sourceFile) {
@@ -172,15 +236,8 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
       r.log(`"${info.title}"${info.uploader ? ` của ${info.uploader}` : ""}${info.durationSec ? ` · dài ${formatDuration(info.durationSec)}` : ""}`);
     }
     r.detail("Đang kết nối…");
-    job.sourceFile = await downloadAudio(job.sourceUrl, a.dir, (p) => {
-      if (p.fraction !== null) r.progress(p.fraction);
-      const speed = p.speedBps ? ` · ${formatBytes(p.speedBps)}/s` : "";
-      const eta = p.etaSec !== null ? ` · còn ${formatDuration(p.etaSec)}` : "";
-      r.detail(`Đã tải ${formatBytes(p.downloadedBytes)}${p.fraction !== null ? ` (${Math.round(p.fraction * 100)}%)` : ""}${speed}${eta}`);
-    }, signal, (err, attempt, total, delayMs) => {
-      r.log(`Tải lỗi "${err.message.split("\n")[0].slice(0, 200)}", thử lại lần ${attempt}/${total} sau ${delayMs / 1000}s`, "warn");
-      r.detail(`Chờ ${delayMs / 1000}s rồi thử lại…`);
-    });
+    const { onProgress, onRetry } = downloadHandlers(r);
+    job.sourceFile = await downloadAudio(job.sourceUrl, a.dir, onProgress, signal, onRetry);
     r.log(`Tải xong: ${job.sourceFile} (${formatBytes(statSync(join(a.dir, job.sourceFile)).size)}, mất ${stepElapsed("download")})`, "success");
   }
 

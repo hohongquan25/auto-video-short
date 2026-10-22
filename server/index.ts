@@ -15,12 +15,13 @@ import { appendLog, artifacts, resetFromStep } from "./pipeline/run-job.js";
 import { synthesizeToFile } from "./pipeline/tts.js";
 import { ffmpegVersion, hasVideoStream, probeDuration } from "./lib/ffmpeg.js";
 import { run } from "./lib/proc.js";
+import { formatDuration } from "./lib/format.js";
 import { claudeStatus } from "./lib/claude.js";
 import { listOlvrocVoices, olvrocStatus, olvrocSynthesize } from "./lib/olvroc.js";
 import { probeUrl, ytdlpVersion } from "./lib/ytdlp.js";
 import { finishOauth, googleConfigured, googleStatus, oauthUrl } from "./lib/google.js";
 import {
-  BACKGROUND_SPEEDS, BUILTIN_DEFAULTS, EDGE_VOICES, FALLBACK_VOICE, STEPS, STEP_LABELS, OLVROC_PREFIX, voiceProvider, type Background, type DefaultSettings, type Job, type SystemStatus, type Voice,
+  BACKGROUND_SPEEDS, BUILTIN_DEFAULTS, EDGE_VOICES, FALLBACK_VOICE, STEPS, STEP_LABELS, OLVROC_PREFIX, SUMMARY_DEFAULTS, voiceProvider, type Background, type DefaultSettings, type Job, type SystemStatus, type Voice,
 } from "./types.js";
 
 ensureDataDirs();
@@ -292,10 +293,10 @@ app.post("/api/jobs", upload.single("media"), async (req, res) => {
     const title = givenTitle || (file ? file.originalname.replace(/\.[^.]+$/, "") : sourceInfo?.title ?? topic!.prompt.split("\n")[0].slice(0, 80));
     const sourceTopic = topic ? { ...topic, autoTitle: !givenTitle } : null;
     const job: Job = {
-      id, title: title.slice(0, 200), sourceFile, sourceDurationSec: sourceInfo?.durationSec ?? null,
+      id, kind: "story", title: title.slice(0, 200), sourceFile, sourceDurationSec: sourceInfo?.durationSec ?? null,
       sourceUrl, sourceInfo, sourceTopic, createdAt: now, updatedAt: now,
       status: "queued", step: null, progress: 0, detail: null, timings: {}, error: null,
-      settings, reviewApproved: false, outputs: [], publish: null, log: [], callbackUrl, drive: null,
+      settings, reviewApproved: false, outputs: [], publish: null, log: [], callbackUrl, drive: null, summary: null,
     };
     appendLog(job, sourceUrl ? `Đã tạo job từ link ${sourceInfo!.platform}, đang chờ xử lý`
       : topic ? "Đã tạo job AI viết truyện theo chủ đề, đang chờ xử lý"
@@ -305,6 +306,74 @@ app.post("/api/jobs", upload.single("media"), async (req, res) => {
     res.status(201).json(job);
   } catch (err) {
     if (file && existsSync(file.path)) rmSync(file.path, { force: true });
+    throw err;
+  }
+});
+
+// ── Summaries ───────────────────────────────────────────────────────────────
+
+const languageSchema = z.string().regex(/^[a-z]{2,3}$/, "Mã ngôn ngữ không hợp lệ");
+
+const summarySettingsSchema = z.object({
+  aiProvider: z.enum(["claude", "gemini"]).default(SUMMARY_DEFAULTS.aiProvider),
+  targetSec: z.number().min(30, "Bản rút gọn dài ít nhất 30 giây").max(4 * 3600),
+  language: z.union([z.literal(""), languageSchema]).default(""),
+  useCaptions: z.boolean().default(true),
+  subtitles: z.union([z.enum(["none", "source"]), languageSchema]).default("none"),
+  summaryLanguage: languageSchema.default("vi"),
+  format: formatSchema.default("original"),
+  fit: z.enum(["blur", "crop"]).default("blur"),
+});
+
+const CAPTION_EXT = new Set([".srt", ".vtt"]);
+
+/**
+ * Create a summary job from an uploaded video (multipart field "media", with
+ * its captions in "captions" when there are some) or a video link ("url").
+ * "settings" is a JSON string in multipart and may be an object in a JSON body.
+ */
+app.post("/api/summaries", upload.fields([{ name: "media", maxCount: 1 }, { name: "captions", maxCount: 1 }]), async (req, res) => {
+  const files = req.files as Record<string, Express.Multer.File[] | undefined> | undefined;
+  const file = files?.media?.[0];
+  const captions = files?.captions?.[0];
+  try {
+    const sourceUrl = !file && req.body.url ? linkSchema.parse(String(req.body.url).trim()) : null;
+    if (!file && !sourceUrl) throw new HttpError(400, "Cần file video (trường media) hoặc link video (trường url)");
+    const ext = file ? extname(file.originalname).toLowerCase() : "";
+    if (file && !VIDEO_EXT.has(ext)) throw new HttpError(400, `Cần một file video, định dạng ${ext || "này"} không được hỗ trợ`);
+    const captionsExt = captions ? extname(captions.originalname).toLowerCase() : "";
+    if (captions && !CAPTION_EXT.has(captionsExt)) throw new HttpError(400, "Phụ đề cần là file .srt hoặc .vtt");
+
+    const rawSettings = typeof req.body.settings === "string" ? JSON.parse(req.body.settings || "{}") : (req.body.settings ?? {});
+    const settings = summarySettingsSchema.parse(rawSettings);
+    const sourceInfo = sourceUrl ? await probeOrReject(sourceUrl) : null;
+    if (sourceInfo?.durationSec && settings.targetSec >= sourceInfo.durationSec * 0.95) {
+      throw new HttpError(400, `Video dài ${formatDuration(sourceInfo.durationSec)}, hãy chọn bản rút gọn ngắn hơn`);
+    }
+
+    const id = newId();
+    mkdirSync(jobDir(id), { recursive: true });
+    const sourceFile = file ? `source${ext}` : "";
+    if (file) renameSync(file.path, join(jobDir(id), sourceFile));
+    if (captions) renameSync(captions.path, join(jobDir(id), `user-captions${captionsExt}`));
+
+    const now = new Date().toISOString();
+    const title = String(req.body.title ?? "").trim() || (file ? file.originalname.replace(/\.[^.]+$/, "") : sourceInfo!.title);
+    const job: Job = {
+      id, kind: "summary", title: title.slice(0, 200), sourceFile, sourceDurationSec: sourceInfo?.durationSec ?? null,
+      sourceUrl, sourceInfo, sourceTopic: null, createdAt: now, updatedAt: now,
+      status: "queued", step: null, progress: 0, detail: null, timings: {}, error: null,
+      // Story settings a summary job never reads, so every job keeps one shape.
+      settings: { ...BUILTIN_DEFAULTS, styleId: "", backgroundIds: [], aiProvider: settings.aiProvider, formats: [settings.format], fit: settings.fit },
+      reviewApproved: false, outputs: [], publish: null, log: [], callbackUrl: null, drive: null,
+      summary: { settings, transcriptFrom: null, language: null, result: null },
+    };
+    appendLog(job, sourceUrl ? `Đã tạo job tóm tắt từ link ${sourceInfo!.platform}, đang chờ xử lý` : "Đã tạo job tóm tắt, đang chờ xử lý");
+    saveJob(job);
+    enqueue(id);
+    res.status(201).json(job);
+  } catch (err) {
+    for (const f of [file, captions]) if (f && existsSync(f.path)) rmSync(f.path, { force: true });
     throw err;
   }
 });
@@ -335,6 +404,7 @@ app.post("/api/jobs/:id/rerun", async (req, res) => {
   const body = z.object({
     fromStep: z.enum(STEPS).optional(),
     settings: settingsSchema.optional(),
+    summary: summarySettingsSchema.optional(),
   }).parse(req.body);
   // Awaited before the idle check so no other request can start the job in between.
   if (body.settings) await validateOlvrocVoice(body.settings.voice);
@@ -345,13 +415,17 @@ app.post("/api/jobs/:id/rerun", async (req, res) => {
     validateSettingsRefs(body.settings);
     job.settings = body.settings;
   }
+  if (body.summary) {
+    if (!job.summary) throw new HttpError(400, "Job này không phải job tóm tắt");
+    job.summary.settings = body.summary;
+  }
   if (body.fromStep === "upload" && !googleConfigured()) {
     throw new HttpError(400, "Chưa cấu hình Google Drive (xem mục Google Drive trong .env.example)");
   }
   if (body.fromStep) resetFromStep(job, body.fromStep);
   job.status = "queued";
   job.error = null;
-  if (body.settings) appendLog(job, "Đã cập nhật cài đặt");
+  if (body.settings || body.summary) appendLog(job, "Đã cập nhật cài đặt");
   appendLog(job, body.fromStep ? `Chạy lại từ bước "${STEP_LABELS[body.fromStep]}"` : "Thử lại từ bước bị lỗi");
   saveJob(job);
   enqueue(job.id);
@@ -367,6 +441,24 @@ app.post("/api/jobs/:id/stop", (req, res) => {
     appendLog(job, job.error, "warn");
     saveJob(job);
     notify(job);
+  }
+  res.json(job);
+});
+
+/** Rename a job, running or not: the running copy is the one changed, so the runner's next save keeps the new name. */
+app.patch("/api/jobs/:id", (req, res) => {
+  const { title } = z.object({ title: z.string().trim().min(1, "Tên video đang trống").max(200) }).parse(req.body);
+  const job = loadJob(req.params.id);
+  if (title !== job.title) {
+    appendLog(job, `Đổi tên "${job.title}" thành "${title}"`);
+    job.title = title;
+    // The name the user chose now names the files, not the one the AI gave the story.
+    if (job.publish?.storyName) {
+      job.publish.storyName = null;
+      const kitFile = artifacts(job.id).publishKit;
+      if (existsSync(kitFile)) writeFileSync(kitFile, JSON.stringify({ ...JSON.parse(readFileSync(kitFile, "utf8")), storyName: null }, null, 2));
+    }
+    saveJob(job);
   }
   res.json(job);
 });
