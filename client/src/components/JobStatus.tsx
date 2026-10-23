@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import {
-  AudioLines, CloudDownload, Captions, Check, CircleAlert, Clapperboard, ClipboardCheck, Hourglass, LoaderCircle, Mic, PenLine, Sparkles,
-  type LucideIcon,
+  AudioLines, CloudDownload, CloudUpload, Captions, Check, CircleAlert, Clapperboard, ClipboardCheck, FileText, Hourglass, ListChecks, LoaderCircle, Megaphone, Mic,
+  PenLine, Scissors, Sparkles, type LucideIcon,
 } from "lucide-react";
 import type { Job, JobStatus, Step } from "../api";
 import { STATUS_LABELS, STEP_LABELS, formatDuration } from "../format";
@@ -9,6 +9,7 @@ import { jobSteps, stepSeconds, stepState, type StepState } from "../jobState";
 
 export const STEP_ICONS: Record<Step, LucideIcon> = {
   download: CloudDownload,
+  captions: FileText,
   extract: AudioLines,
   transcribe: Captions,
   write: PenLine,
@@ -16,6 +17,11 @@ export const STEP_ICONS: Record<Step, LucideIcon> = {
   review: ClipboardCheck,
   tts: Mic,
   render: Clapperboard,
+  publish: Megaphone,
+  upload: CloudUpload,
+  summarize: ListChecks,
+  narrate: Mic,
+  cut: Scissors,
 };
 
 export function StatusBadge({ status }: { status: JobStatus }) {

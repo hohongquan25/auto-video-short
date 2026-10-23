@@ -1,0 +1,352 @@
+{
+  "id": "ssTeleNhacDang01",
+  "name": "TikTok - Nhắc đăng qua Telegram",
+  "nodes": [
+    {
+      "id": "97888d3f-e920-4081-9047-e0fd2cdec63d",
+      "name": "Theo lịch",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8,12,19 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "3cb19ee6-d22f-46e2-b0ef-f5e59239e4df",
+      "name": "Video chờ đăng",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "status",
+              "lookupValue": "pending"
+            },
+            {
+              "lookupColumn": "format",
+              "lookupValue": "tiktok"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "036d642e-45fd-4b04-8ed2-6b00c49b2808",
+      "name": "Đã tới giờ",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f5da70de-8045-484d-81af-f8714809940f",
+              "leftValue": "={{ !$json.scheduled_at || DateTime.fromISO(String($json.scheduled_at)) <= $now }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2ed848cd-0e24-4d3e-9afa-3db659a8e610",
+      "name": "Sắp xếp theo phần",
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "job_id"
+            },
+            {
+              "fieldName": "part"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2a954d24-23e7-49f1-bb3b-1c1ded31b709",
+      "name": "Lấy 1 video",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "maxItems": 1
+      }
+    },
+    {
+      "id": "701e3953-cadd-4498-a18a-95f0e6c3fb6b",
+      "name": "Cấu hình Telegram",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4f02033e-f6dd-4fee-993e-5b4a642ecdf6",
+              "name": "bot_token",
+              "value": "DAN_BOT_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "b88d0f0c-9732-41d3-ae4c-b1ba336903f7",
+              "name": "chat_id",
+              "value": "DAN_CHAT_ID",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "42cc19dd-0ea3-463f-ad47-ca0e1b482ef2",
+      "name": "Soạn tin",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const r = $('Lấy 1 video').first().json;\nconst cfg = $('Cấu hình Telegram').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst sec = Math.round(Number(r.duration_sec) || 0);\nconst part = r.part ? ` · Phần ${r.part}/${r.total_parts}` : ' · Trọn bộ';\nconst lines = [\n  `🎬 <b>${esc(r.title)}</b>${part}`,\n  `⏱ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`,\n  '',\n  '📝 <b>Caption</b> (chạm vào khung để copy):',\n  `<pre>${esc(String(r.post_description ?? '').slice(0, 3500))}</pre>`,\n  '',\n  `📥 <a href=\"${esc(r.video_url)}\">Tải video từ Drive</a>`,\n];\nif (r.cover_url) lines.push(`🖼 <a href=\"${esc(r.cover_url)}\">Ảnh bìa</a>`);\nreturn [{ json: { id: r.id, payload: {\n  chat_id: cfg.chat_id, parse_mode: 'HTML', text: lines.join('\n'), link_preview_options: { is_disabled: true },\n  reply_markup: { inline_keyboard: [[\n    { text: '✅ Đã đăng', callback_data: `posted|${r.id}` },\n    { text: '⏭ Bỏ qua', callback_data: `skip|${r.id}` },\n  ]] },\n} } }];"
+      }
+    },
+    {
+      "id": "557a3996-1a10-4d11-864a-b77c69b01c1b",
+      "name": "Gửi Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $('Cấu hình Telegram').first().json.bot_token }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "6f2fd099-7fcb-45ca-8a6d-1ce60e0a1eec",
+      "name": "Ghi đã nhắc",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1760,
+        300
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Soạn tin').first().json.id }}",
+            "status": "notified",
+            "note": "={{ 'Đã nhắc qua Telegram lúc ' + $now.toFormat('HH:mm dd/MM') }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Theo lịch": {
+      "main": [
+        [
+          {
+            "node": "Video chờ đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Video chờ đăng": {
+      "main": [
+        [
+          {
+            "node": "Đã tới giờ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đã tới giờ": {
+      "main": [
+        [
+          {
+            "node": "Sắp xếp theo phần",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sắp xếp theo phần": {
+      "main": [
+        [
+          {
+            "node": "Lấy 1 video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy 1 video": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cấu hình Telegram": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin": {
+      "main": [
+        [
+          {
+            "node": "Gửi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gửi Telegram": {
+      "main": [
+        [
+          {
+            "node": "Ghi đã nhắc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "saveManualExecutions": true
+  }
+}

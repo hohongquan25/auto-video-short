@@ -1,0 +1,163 @@
+{
+  "note": "Model files read by python/olvroc, pinned to one upstream revision each (Apache-2.0, see python/olvroc/NOTICE). They live in models/olvroc (not in git); `pnpm setup:olvroc` downloads each `remote` file, checks `remoteSha256`, applies `rename` to the names and to .onnx/.json contents (same-length, so graphs stay valid), and checks `sha256`.",
+  "rename": [
+    [
+      "vieneu",
+      "olvroc"
+    ],
+    [
+      "VieNeu",
+      "OlvRoc"
+    ]
+  ],
+  "sources": {
+    "fp32": {
+      "repo": "pnnbao-ump/VieNeu-TTS-v3-Turbo",
+      "revision": "61b85e3d937fbbacb387714180e8182823512523",
+      "folder": "onnx_update",
+      "license": "Apache-2.0"
+    },
+    "int8": {
+      "repo": "pnnbao-ump/VieNeu-TTS-v3-Turbo",
+      "revision": "61b85e3d937fbbacb387714180e8182823512523",
+      "folder": "onnx_int8",
+      "license": "Apache-2.0"
+    },
+    "codec": {
+      "repo": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX",
+      "revision": "ceff0d0749bfb3fa2d61149794ec6feef0d1e1ae",
+      "folder": "",
+      "license": "Apache-2.0"
+    }
+  },
+  "files": [
+    {
+      "source": "fp32",
+      "remote": "config.json",
+      "name": "config.json",
+      "size": 2152,
+      "remoteSha256": "17d89d414ee302a82db7b330bf57b4cdf8541569392119c81f552178cafcb79b",
+      "sha256": "9f97a5df819328dd489b1313b216b424c5587bb8c63eb4c3cd54e59034687614"
+    },
+    {
+      "source": "fp32",
+      "remote": "tokenizer.json",
+      "name": "tokenizer.json",
+      "size": 22320,
+      "remoteSha256": "6cc6bcbe380b8c37bd9f2514e37c5dfa3e00e122c6e3125dae5c4afe48e39158",
+      "sha256": "6cc6bcbe380b8c37bd9f2514e37c5dfa3e00e122c6e3125dae5c4afe48e39158"
+    },
+    {
+      "source": "fp32",
+      "remote": "vieneu_prefill.onnx",
+      "name": "olvroc_prefill.onnx",
+      "size": 324499,
+      "remoteSha256": "27f8b064f6b57b5448e95d095f1959588c005d614678045c2b97ecccf3b7a0f7",
+      "sha256": "7b8f8f53fba83ca889e151bd1ed2fb1c78815b36ebc9e06c032edd7df45637bb"
+    },
+    {
+      "source": "fp32",
+      "remote": "vieneu_decode_step.onnx",
+      "name": "olvroc_decode_step.onnx",
+      "size": 306134,
+      "remoteSha256": "bedc379cea61ea5d616312750d95ad3924e055856662d19187a889a5edc24ceb",
+      "sha256": "3124b8a8ef66b4663b3cd4ba1812a5ee7a1036167f579588755e865396b1e2b9"
+    },
+    {
+      "source": "fp32",
+      "remote": "vieneu_acoustic_cached.onnx",
+      "name": "olvroc_acoustic_cached.onnx",
+      "size": 7207223,
+      "remoteSha256": "f631e3387c788c3d8b9a5ac5df94952af5bc4c4d1049ff8a751e76a246fff2d4",
+      "sha256": "f631e3387c788c3d8b9a5ac5df94952af5bc4c4d1049ff8a751e76a246fff2d4"
+    },
+    {
+      "source": "fp32",
+      "remote": "vieneu_backbone_shared.data",
+      "name": "olvroc_backbone_shared.data",
+      "size": 415319040,
+      "remoteSha256": "c7c072193db33d0542457e2612c7272c44c4279d1cafaf0aa4c379964911db2f",
+      "sha256": "c7c072193db33d0542457e2612c7272c44c4279d1cafaf0aa4c379964911db2f"
+    },
+    {
+      "source": "fp32",
+      "remote": "vieneu_v3_heads.npz",
+      "name": "olvroc_v3_heads.npz",
+      "size": 52219622,
+      "remoteSha256": "fb22484baa424bbb775133a6e5f0d00d6299b2b256fbe3312a864b85b9aed01e",
+      "sha256": "fb22484baa424bbb775133a6e5f0d00d6299b2b256fbe3312a864b85b9aed01e"
+    },
+    {
+      "source": "int8",
+      "remote": "config.json",
+      "name": "config.json",
+      "size": 2152,
+      "remoteSha256": "a9f8d9c4b4736448ab355d1a98cfe48f5e39aecf2916c37b0806c228612e9a2d",
+      "sha256": "3913c18c1cef85e256cca7fe3bce9f468663f9e5619fb1cc945ae64378c1f4bc"
+    },
+    {
+      "source": "int8",
+      "remote": "tokenizer.json",
+      "name": "tokenizer.json",
+      "size": 22320,
+      "remoteSha256": "6cc6bcbe380b8c37bd9f2514e37c5dfa3e00e122c6e3125dae5c4afe48e39158",
+      "sha256": "6cc6bcbe380b8c37bd9f2514e37c5dfa3e00e122c6e3125dae5c4afe48e39158"
+    },
+    {
+      "source": "int8",
+      "remote": "vieneu_prefill.onnx",
+      "name": "olvroc_prefill.onnx",
+      "size": 1090823,
+      "remoteSha256": "c6a80dabf67c820de798f8deb7d4e0f37d81b5d76e33fbe20ab5a67f2d371f4e",
+      "sha256": "0b5ce9da0cd815603d48cf3fe912c34e3eda316030b0cf9f903f2dd19e4a12ee"
+    },
+    {
+      "source": "int8",
+      "remote": "vieneu_decode_step.onnx",
+      "name": "olvroc_decode_step.onnx",
+      "size": 1062040,
+      "remoteSha256": "2c5b30bd8ccb751c58d651f44c074df10c4113efd08719adaa8e3dec6a6ce2ca",
+      "sha256": "bcdbead8587dbe2b8922f12b40ca487b03471d406f36b6a65d65aad2fbf4bc88"
+    },
+    {
+      "source": "int8",
+      "remote": "vieneu_acoustic_cached.onnx",
+      "name": "olvroc_acoustic_cached.onnx",
+      "size": 7207223,
+      "remoteSha256": "f631e3387c788c3d8b9a5ac5df94952af5bc4c4d1049ff8a751e76a246fff2d4",
+      "sha256": "f631e3387c788c3d8b9a5ac5df94952af5bc4c4d1049ff8a751e76a246fff2d4"
+    },
+    {
+      "source": "int8",
+      "remote": "vieneu_backbone_shared.data",
+      "name": "olvroc_backbone_shared.data",
+      "size": 103891968,
+      "remoteSha256": "bb683925f7c8d826fadca4f8a0252ae4d5fc5b7837c14f6857e18f4c6666588d",
+      "sha256": "bb683925f7c8d826fadca4f8a0252ae4d5fc5b7837c14f6857e18f4c6666588d"
+    },
+    {
+      "source": "int8",
+      "remote": "vieneu_v3_heads.npz",
+      "name": "olvroc_v3_heads.npz",
+      "size": 52219622,
+      "remoteSha256": "fb22484baa424bbb775133a6e5f0d00d6299b2b256fbe3312a864b85b9aed01e",
+      "sha256": "fb22484baa424bbb775133a6e5f0d00d6299b2b256fbe3312a864b85b9aed01e"
+    },
+    {
+      "source": "codec",
+      "remote": "moss_audio_tokenizer_decode_full.onnx",
+      "name": "moss_audio_tokenizer_decode_full.onnx",
+      "size": 681902,
+      "remoteSha256": "0fbbafe3fd4afa2a019af5c5ced204af6e2d1db044fa40f021525d2aee95b4ac",
+      "sha256": "0fbbafe3fd4afa2a019af5c5ced204af6e2d1db044fa40f021525d2aee95b4ac"
+    },
+    {
+      "source": "codec",
+      "remote": "moss_audio_tokenizer_decode_shared.data",
+      "name": "moss_audio_tokenizer_decode_shared.data",
+      "size": 44198912,
+      "remoteSha256": "e69d52e0f4e84ca27850557ee54face46632d3a5a16c89bd246c7c408466dcad",
+      "sha256": "e69d52e0f4e84ca27850557ee54face46632d3a5a16c89bd246c7c408466dcad"
+    }
+  ]
+}

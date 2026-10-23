@@ -91,6 +91,8 @@ export interface BadgeSpec {
   /** Accent colour, "#RRGGBB". */
   color: string;
   durationSec: number;
+  /** Fade in at the start; off for a still image taken at the first frame. */
+  fadeIn?: boolean;
 }
 
 /** Style and Dialogue lines that draw the badge on a `width`×`height` frame. */
@@ -112,7 +114,7 @@ export function badgeLines(b: BadgeSpec, width: number, height: number, time: (s
   const dark = "&H161616&";
   const start = time(0);
   const end = time(b.durationSec + 1);
-  const fade = "\\fad(600,0)";
+  const fade = b.fadeIn === false ? "" : "\\fad(600,0)";
   const draw = (layer: number, tags: string, path: string) =>
     `Dialogue: ${layer},${start},${end},Brand,,0,0,0,,{\\an7\\pos(0,0)${fade}\\p1${tags}}${path}{\\p0}`;
 

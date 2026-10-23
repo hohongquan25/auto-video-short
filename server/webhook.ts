@@ -1,23 +1,42 @@
 import { config } from "./config.js";
-import type { Job, LogLevel } from "./types.js";
+import { driveFileUrl, driveFolderUrl, postFor, sheetUrl, type FullVideo, type Job, type LogLevel, type VideoFormat } from "./types.js";
 
 /** Absolute links to a job's page and output files, for tools outside the browser. */
 export function jobLinks(job: Job) {
   const base = config.publicUrl;
-  return {
-    page: `${base}/jobs/${job.id}`,
-    api: `${base}/api/jobs/${job.id}`,
-    parts: job.parts.map((p) => ({
-      index: p.index,
-      durationSec: p.durationSec,
-      video: `${base}/files/jobs/${job.id}/parts/${p.file}`,
-      text: `${base}/files/jobs/${job.id}/parts/${p.textFile}`,
-    })),
-    full: job.fullVideo && {
-      durationSec: job.fullVideo.durationSec,
-      video: `${base}/files/jobs/${job.id}/parts/${job.fullVideo.file}`,
-      text: `${base}/files/jobs/${job.id}/parts/${job.fullVideo.textFile}`,
+  const file = (name: string) => `${base}/files/jobs/${job.id}/parts/${name}`;
+  const video = (v: FullVideo, format: VideoFormat, part: { index: number; total: number } | null) => ({
+    durationSec: v.durationSec,
+    video: file(v.file),
+    text: file(v.textFile),
+    cover: v.cover ? file(v.cover) : null,
+    // The same video and cover on Google Drive, once the upload step has run.
+    drive: job.drive && {
+      video: job.drive.files[v.file] ? driveFileUrl(job.drive.files[v.file].id) : null,
+      videoId: job.drive.files[v.file]?.id ?? null,
+      cover: v.cover && job.drive.files[v.cover] ? driveFileUrl(job.drive.files[v.cover].id) : null,
     },
+    // Title, description and tags to paste when posting this video.
+    post: job.publish ? postFor(job.publish, format, part) : null,
+  });
+  const outputs = job.outputs.map((o) => ({
+    format: o.format,
+    parts: o.parts.map((p) => ({ index: p.index, ...video(p, o.format, { index: p.index, total: o.parts.length }) })),
+    full: o.fullVideo && video(o.fullVideo, o.format, null),
+  }));
+  return {
+    page: `${base}/${job.kind === "summary" ? "summaries" : "jobs"}/${job.id}`,
+    api: `${base}/api/jobs/${job.id}`,
+    driveFolder: job.drive ? driveFolderUrl(job.drive.folderId) : null,
+    sheet: job.drive ? sheetUrl(job.drive.sheetId) : null,
+    outputs,
+    // The first format's videos, where workflows built for a single format look for them.
+    parts: outputs[0]?.parts ?? [],
+    full: outputs[0]?.full ?? null,
+    // A summary job's cut video and what it says, once made.
+    summary: job.summary?.result?.file
+      ? { video: `${base}/files/jobs/${job.id}/${job.summary.result.file}`, title: job.summary.result.title, text: job.summary.result.text }
+      : null,
   };
 }
 
@@ -66,8 +85,9 @@ export async function notifyWebhooks(job: Job, log: (msg: string, level?: LogLev
       sourceUrl: job.sourceUrl,
       sourceTopic: job.sourceTopic,
       settings: job.settings,
-      parts: job.parts,
-      fullVideo: job.fullVideo,
+      outputs: job.outputs,
+      publish: job.publish,
+      drive: job.drive,
     },
     links: jobLinks(job),
   });

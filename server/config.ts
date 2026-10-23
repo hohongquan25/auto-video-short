@@ -21,6 +21,17 @@ function checkedEnv(key: string, pattern: RegExp, example: string): string | und
 }
 
 /**
+ * A Drive folder or Google Sheet given by its id or by its link, e.g.
+ * https://drive.google.com/drive/folders/<id> or https://docs.google.com/spreadsheets/d/<id>/edit.
+ */
+export function googleId(value: string | undefined, key: string): string | undefined {
+  if (!value) return undefined;
+  const id = value.match(/\/(?:folders|d)\/([\w-]{10,})/)?.[1] ?? (/^[\w-]{10,}$/.test(value) ? value : undefined);
+  if (!id) throw new Error(`${key}="${value}" không hợp lệ (dán id hoặc link của thư mục / bảng tính)`);
+  return id;
+}
+
+/**
  * Locate the Claude Code binary. On Windows npm only puts a .cmd shim on PATH,
  * which cannot be spawned without a shell, so look for the real claude.exe.
  */
@@ -52,13 +63,13 @@ export const config = {
   geminiModel: env("GEMINI_MODEL") ?? "gemini-flash-latest",
   claudePath: env("CLAUDE_PATH") ?? findClaude(),
   claudeModel: env("CLAUDE_MODEL") ?? "sonnet",
-  vbeeAppId: env("VBEE_APP_ID"),
-  vbeeToken: env("VBEE_TOKEN"),
-  /**
-   * Vbee's async API requires a webhook, but results are fetched by polling,
-   * so it only needs to be a well-formed URL unless this server is public.
-   */
-  vbeeWebhookUrl: env("VBEE_WEBHOOK_URL") ?? "https://example.invalid/story-studio/vbee-callback",
+  /** Same Python as Whisper: `pnpm setup:whisper` installs what python/olvroc needs too. */
+  olvrocPython: env("WHISPER_PYTHON") ?? (existsSync(venvPython) ? venvPython : "python"),
+  /** Model files (~650 MB, kept out of git), downloaded by `pnpm setup:olvroc`. */
+  olvrocModelDir: join(root, "models", "olvroc"),
+  olvrocScript: join(root, "python", "olvroc_tts.py"),
+  /** fp32 = best quality; int8 = ~1.6x faster on CPUs with VNNI, garbled audio on older ones. */
+  olvrocPrecision: checkedEnv("OLVROC_PRECISION", /^(fp32|int8)$/, "fp32") ?? "fp32",
   whisperModel: env("WHISPER_MODEL") ?? "large-v3-turbo",
   whisperLanguage: env("WHISPER_LANGUAGE") ?? "vi",
   /**
@@ -83,6 +94,15 @@ export const config = {
   ytdlpLimitRate: checkedEnv("YTDLP_LIMIT_RATE", /^\d+(\.\d+)?[KMG]?$/i, "2M"),
   /** Download through aria2c (must be on PATH) with several connections. */
   ytdlpAria2: /^(1|true|yes|on)$/i.test(env("YTDLP_ARIA2") ?? ""),
+  /** Service account key (JSON). Its uploads need a folder in a Shared Drive: service accounts have no storage of their own. */
+  googleServiceAccountFile: env("GOOGLE_SERVICE_ACCOUNT_FILE") && resolve(root, env("GOOGLE_SERVICE_ACCOUNT_FILE")!),
+  /** OAuth client ("Desktop app") for uploading as a person's own Google account, connected from the browser. */
+  googleClientId: env("GOOGLE_CLIENT_ID"),
+  googleClientSecret: env("GOOGLE_CLIENT_SECRET"),
+  /** Where finished videos go; with OAuth, a "Story Studio" folder and sheet are made when these are empty. */
+  googleDriveFolderId: googleId(env("GOOGLE_DRIVE_FOLDER_ID"), "GOOGLE_DRIVE_FOLDER_ID"),
+  googleSheetId: googleId(env("GOOGLE_SHEET_ID"), "GOOGLE_SHEET_ID"),
+  googleSheetTab: env("GOOGLE_SHEET_TAB") ?? "Videos",
   ffmpeg: env("FFMPEG_PATH") ?? "ffmpeg",
   ffprobe: env("FFPROBE_PATH") ?? "ffprobe",
 };
@@ -95,4 +115,8 @@ export const paths = {
   stylesFile: join(config.dataDir, "styles.json"),
   backgroundsFile: join(config.dataDir, "backgrounds.json"),
   brandFile: join(config.dataDir, "brand.json"),
+  defaultsFile: join(config.dataDir, "defaults.json"),
+  summaryDefaultsFile: join(config.dataDir, "summary-defaults.json"),
+  /** The connected Google account's refresh token and the folder and sheet made for it. Secret. */
+  googleFile: join(config.dataDir, "google.json"),
 };

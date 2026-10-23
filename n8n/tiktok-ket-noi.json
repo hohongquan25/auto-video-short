@@ -1,0 +1,313 @@
+{
+  "id": "ssTikTokKetNoi01",
+  "name": "TikTok - Kết nối",
+  "nodes": [
+    {
+      "id": "8f23e134-d3f9-4398-b9f6-75acce3eb831",
+      "name": "Chạy tay",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "70a039d1-9e15-48a1-9865-ec84e6ef0a98",
+      "name": "Cấu hình TikTok",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "916fa0a5-7dd7-4453-8ed0-fef02274d038",
+              "name": "client_key",
+              "value": "DAN_CLIENT_KEY_TIKTOK",
+              "type": "string"
+            },
+            {
+              "id": "e3744978-8c01-44f0-b6d9-f1f852de44db",
+              "name": "client_secret",
+              "value": "DAN_CLIENT_SECRET_TIKTOK",
+              "type": "string"
+            },
+            {
+              "id": "8272cb1f-78a9-4c9a-ad50-41aa4f8ac9e0",
+              "name": "redirect_uri",
+              "value": "https://hohongquan25.github.io/quanhh.github.io/tiktok.html",
+              "type": "string"
+            },
+            {
+              "id": "2a88a7b5-e39d-48cc-91b6-ae080c1789c4",
+              "name": "code",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "14cb988a-22ec-496a-9a9d-583f95cf4883",
+      "name": "Đã có mã?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ec4a5cab-8fd0-420e-99e6-18c583d3a639",
+              "leftValue": "={{ $json.code }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "494529af-d45f-4a93-93e3-7d64d01c82a7",
+      "name": "Đổi mã lấy token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/oauth/token/",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_key",
+              "value": "={{ $json.client_key }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $json.client_secret }}"
+            },
+            {
+              "name": "code",
+              "value": "={{ $json.code }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "authorization_code"
+            },
+            {
+              "name": "redirect_uri",
+              "value": "={{ $json.redirect_uri }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d0828a39-fb0f-4fde-891e-671a2245e1ea",
+      "name": "Kiểm tra token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nif (!r.refresh_token) {\n  throw new Error('TikTok không trả token: ' + (r.error_description || r.error || JSON.stringify(r)) +\n    '. Mã chỉ dùng được 1 lần và hết hạn sau vài phút: lấy mã mới rồi chạy lại.');\n}\nreturn [{ json: { key: 'tiktok', refresh_token: r.refresh_token, open_id: r.open_id, scope: r.scope } }];"
+      }
+    },
+    {
+      "id": "c7ced0e0-7a5e-4de1-a64f-e7f4809a9d04",
+      "name": "Lưu token",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1100,
+        200
+      ],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "TikTokAuth",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "key": "tiktok",
+            "refresh_token": "={{ $json.refresh_token }}",
+            "open_id": "={{ $json.open_id }}",
+            "updated_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "key"
+          ],
+          "schema": [
+            {
+              "id": "key",
+              "displayName": "key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "refresh_token",
+              "displayName": "refresh_token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "open_id",
+              "displayName": "open_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "07bd5b7b-586a-4dc2-841b-b017d6faca9b",
+      "name": "Mở link này để đăng nhập TikTok",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        420
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "eac812e6-745b-4feb-8872-4e0c605764d8",
+              "name": "authorize_url",
+              "type": "string",
+              "value": "={{ 'https://www.tiktok.com/v2/auth/authorize/?client_key=' + encodeURIComponent($json.client_key) + '&scope=user.info.basic,video.upload&response_type=code&state=storystudio&redirect_uri=' + encodeURIComponent($json.redirect_uri) }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Chạy tay": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình TikTok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cấu hình TikTok": {
+      "main": [
+        [
+          {
+            "node": "Đã có mã?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đã có mã?": {
+      "main": [
+        [
+          {
+            "node": "Đổi mã lấy token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mở link này để đăng nhập TikTok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đổi mã lấy token": {
+      "main": [
+        [
+          {
+            "node": "Kiểm tra token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kiểm tra token": {
+      "main": [
+        [
+          {
+            "node": "Lưu token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "saveManualExecutions": true
+  }
+}

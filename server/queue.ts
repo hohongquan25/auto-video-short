@@ -1,5 +1,6 @@
 import { getJob, listJobs, saveJob } from "./store.js";
 import { appendLog, endStep, runJob } from "./pipeline/run-job.js";
+import { runSummary } from "./pipeline/summary.js";
 import { notifyWebhooks } from "./webhook.js";
 import type { Job, LogLevel } from "./types.js";
 
@@ -55,7 +56,7 @@ async function pump(): Promise<void> {
   saveJob(job);
 
   try {
-    await runJob(job, controller.signal);
+    await (job.kind === "summary" ? runSummary : runJob)(job, controller.signal);
   } catch (err) {
     endStep(job);
     job.status = "failed";

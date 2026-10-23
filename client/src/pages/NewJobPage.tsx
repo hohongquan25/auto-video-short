@@ -1,20 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, ArrowRight, Check, CircleAlert, Clapperboard, FileAudio, FileVideo, Link2, LoaderCircle, Mic, PenLine, Rocket, Sparkles,
-  Upload, X,
+  ArrowLeft, ArrowRight, Check, CircleAlert, Clapperboard, FileAudio, FileVideo, Link2, LoaderCircle, Mic, PenLine, Rocket, Save, Sparkles,
+  Upload, X, Zap,
 } from "lucide-react";
-import { api, type JobSettings } from "../api";
+import { api, type DefaultSettings, type JobSettings } from "../api";
 import {
-  BackgroundPicker, DEFAULT_SETTINGS, FormatPicker, FullVideoToggle, PartLengthPicker, ReviewToggle, StylePicker, SubtitleToggle, VoicePicker, defaultProvider, defaultVoice,
+  BackgroundPicker, FormatPicker, FullVideoToggle, PartLengthPicker, ReviewToggle, StylePicker, SubtitleToggle, VoicePicker,
   estimateParts, providerReady,
 } from "../components/Pickers";
 import { FileDrop } from "../components/FileDrop";
 import { LinkSource, useLinkProbe } from "../components/LinkSource";
 import { DEFAULT_TOPIC, TopicSource, topicProblem } from "../components/TopicSource";
 import { errorMessage, useToast } from "../components/Toast";
-import { AI_PROVIDER_LABELS, VIDEO_FORMATS, formatBytes, formatDuration, stripExt } from "../format";
+import { AI_PROVIDER_LABELS, VIDEO_FORMATS, formatBytes, formatDuration, formatPlan, stripExt } from "../format";
 import { useLibrary } from "../useLibrary";
+import { useMediaInfo } from "../useMediaInfo";
 
 const WIZARD = [
   { key: "source", label: "Nguồn truyện", icon: FileAudio },
@@ -26,27 +27,6 @@ const WIZARD = [
 
 const MEDIA_ACCEPT = "audio/*,video/*,.mkv";
 
-/** Local preview URL + duration of the chosen file, read by the browser. */
-function useMediaInfo(file: File | null) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [duration, setDuration] = useState<number | null>(null);
-  useEffect(() => {
-    setDuration(null);
-    if (!file) return setUrl(null);
-    const u = URL.createObjectURL(file);
-    setUrl(u);
-    const probe = document.createElement(file.type.startsWith("video") ? "video" : "audio");
-    probe.preload = "metadata";
-    probe.onloadedmetadata = () => Number.isFinite(probe.duration) && setDuration(probe.duration);
-    probe.src = u;
-    return () => {
-      probe.removeAttribute("src");
-      URL.revokeObjectURL(u);
-    };
-  }, [file]);
-  return { url, duration };
-}
-
 export function NewJobPage() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -57,22 +37,26 @@ export function NewJobPage() {
   const [link, setLink] = useState("");
   const probe = useLinkProbe(mode === "link" ? link : "");
   const [title, setTitle] = useState("");
+  const [defaults, setDefaults] = useState<DefaultSettings | null>(null);
   const [settings, setSettings] = useState<JobSettings | null>(null);
+  const [savingDefaults, setSavingDefaults] = useState(false);
   const [step, setStep] = useState(0);
   const [reached, setReached] = useState(0);
   const [uploading, setUploading] = useState<number | null>(null);
   const media = useMediaInfo(file);
 
   useEffect(() => {
-    if (settings || !meta || styles.length === 0) return;
-    const aiProvider = defaultProvider(meta);
-    // With no AI available, default to the style that keeps the transcript as is.
-    const preferred = providerReady(meta, aiProvider) ? styles.find((s) => s.prompt) : styles.find((s) => !s.prompt);
-    setSettings({ ...DEFAULT_SETTINGS, voice: defaultVoice(meta), aiProvider, styleId: (preferred ?? styles[0]).id, backgroundId: backgrounds[0]?.id ?? "" });
-  }, [meta, styles, backgrounds, settings]);
+    api.defaults().then(setDefaults).catch((e) => toast("error", errorMessage(e)));
+  }, [toast]);
+
+  // The wizard starts from the saved defaults.
+  useEffect(() => {
+    if (!settings && defaults) setSettings({ ...defaults, backgroundIds: backgrounds.map((b) => b.id) });
+  }, [defaults, backgrounds, settings]);
 
   useEffect(() => {
-    if (settings && !settings.backgroundId && backgrounds[0]) setSettings({ ...settings, backgroundId: backgrounds[0].id });
+    // Every library video is used unless taken out; also covers a first video uploaded on this page.
+    if (settings && settings.backgroundIds.length === 0 && backgrounds.length) setSettings({ ...settings, backgroundIds: backgrounds.map((b) => b.id) });
   }, [backgrounds, settings]);
 
   // Default the story title to the video's title once the link is recognised.
@@ -91,7 +75,7 @@ export function NewJobPage() {
   const speechSec = mode === "topic" ? ((topic.minMinutes + topic.maxMinutes) / 2) * 60 : sourceSec ? sourceSec / rateFactor : null;
   const style = styles.find((s) => s.id === settings.styleId);
   const voice = meta.voices.find((v) => v.id === settings.voice);
-  const background = backgrounds.find((b) => b.id === settings.backgroundId);
+  const chosen = backgrounds.filter((b) => settings.backgroundIds.includes(b.id));
 
   // Warnings are shown but do not stop the job from being created.
   const problems: { step: number; text: string; warning?: boolean }[] = [];
@@ -110,7 +94,7 @@ export function NewJobPage() {
       ? { step: 1, text: `${text}, AI không thể viết truyện` }
       : { step: 1, text: `${text}, bước AI viết lại sẽ lỗi`, warning: true });
   }
-  if (!background) problems.push({ step: 3, text: "Chưa chọn video nền" });
+  if (chosen.length === 0) problems.push({ step: 3, text: "Chưa chọn video nền" });
   if (settings.maxPartSec <= settings.minPartSec) problems.push({ step: 3, text: "Độ dài mỗi phần không hợp lệ" });
   const blocking = problems.filter((p) => !p.warning);
   const stepBlocked = (i: number) => blocking.some((p) => p.step === i);
@@ -126,18 +110,53 @@ export function NewJobPage() {
     setTitle((t) => t || stripExt(f.name));
   };
 
-  const submit = async () => {
-    if (!hasSource || blocking.length) return;
+  const create = async (s: JobSettings) => {
     setUploading(0);
     try {
-      const job = mode === "file" && file ? await api.createJob(file, title, settings, setUploading)
-        : mode === "topic" ? await api.createJobFromTopic({ ...topic, prompt: topic.prompt.trim() }, title, settings)
-        : await api.createJobFromUrl(probe.url, title, settings);
+      const job = mode === "file" && file ? await api.createJob(file, title, s, setUploading)
+        : mode === "topic" ? await api.createJobFromTopic({ ...topic, prompt: topic.prompt.trim() }, title, s)
+        : await api.createJobFromUrl(probe.url, title, s);
       toast("success", "Đã tạo job, bắt đầu xử lý");
       navigate(`/jobs/${job.id}`);
     } catch (err) {
       toast("error", errorMessage(err));
       setUploading(null);
+    }
+  };
+
+  const submit = () => {
+    if (hasSource && !blocking.length) void create(settings);
+  };
+
+  // Quick create: the saved defaults and the whole library, whatever the wizard has been set to.
+  const quickSettings: JobSettings | null = defaults && { ...defaults, backgroundIds: backgrounds.map((b) => b.id) };
+  const quickStyle = styles.find((s) => s.id === defaults?.styleId);
+  const quickVoice = meta.voices.find((v) => v.id === defaults?.voice);
+  const quickProblem = !defaults ? "Đang tải cài đặt mặc định…"
+    : backgrounds.length === 0 ? "Chưa có video nền, hãy thêm ở Thư viện"
+    : !quickVoice ? `Không có giọng ${defaults.voice.replace(/^olvroc:/, "")}`
+    : (quickStyle?.prompt || mode === "topic") && !providerReady(meta, defaults.aiProvider) ? `${AI_PROVIDER_LABELS[defaults.aiProvider]} chưa sẵn sàng`
+    : null;
+  const quickSummary = defaults && [
+    `${quickStyle?.name ?? "?"}${quickStyle?.prompt || mode === "topic" ? ` (${AI_PROVIDER_LABELS[defaults.aiProvider]} ${mode === "topic" ? "viết" : "viết lại"})` : ""}`,
+    `giọng ${quickVoice?.name ?? defaults.voice.replace(/^olvroc:/, "")}`,
+    `cả ${backgrounds.length} video nền`,
+    formatPlan(defaults.formats).map((p) => VIDEO_FORMATS[p.format].label).join(" + "),
+    defaults.subtitles ? "có phụ đề" : "",
+  ].filter(Boolean).join(" · ");
+
+  const { backgroundIds: _, ...current } = settings;
+  const isDefault = defaults !== null && (Object.keys(defaults) as (keyof DefaultSettings)[])
+    .every((k) => JSON.stringify(current[k]) === JSON.stringify(defaults[k]));
+  const saveAsDefaults = async () => {
+    setSavingDefaults(true);
+    try {
+      setDefaults(await api.saveDefaults(current));
+      toast("success", "Đã lưu làm cài đặt mặc định");
+    } catch (err) {
+      toast("error", errorMessage(err));
+    } finally {
+      setSavingDefaults(false);
     }
   };
 
@@ -154,11 +173,15 @@ export function NewJobPage() {
       step: 1, label: "Phong cách",
       value: `${style?.name ?? "?"}${style?.prompt || mode === "topic" ? ` · ${AI_PROVIDER_LABELS[settings.aiProvider]}` : ""}${settings.reviewBeforeTts ? " · có duyệt" : ""}`,
     },
-    { step: 2, label: "Giọng đọc", value: `${voice?.name ?? settings.voice}${voice?.provider === "vbee" ? " (Vbee)" : ""} · ${settings.rate}` },
-    { step: 3, label: "Video nền", value: `${background?.name ?? "Chưa chọn"}${settings.subtitles ? " · có phụ đề" : ""}` },
+    { step: 2, label: "Giọng đọc", value: `${voice?.name ?? settings.voice}${voice?.provider === "olvroc" ? " (OlvRoc)" : ""} · ${settings.rate}` },
+    {
+      step: 3, label: "Video nền",
+      value: `${chosen.length === 0 ? "Chưa chọn" : `${chosen.length === backgrounds.length ? "Cả " : `${chosen.length}/`}${backgrounds.length} video, ghép ngẫu nhiên`}${settings.subtitles ? " · có phụ đề" : ""}`,
+    },
     {
       step: 3, label: "Định dạng",
-      value: `${VIDEO_FORMATS[settings.format].label}${settings.format !== "original" ? ` · ${settings.fit === "blur" ? "nền mờ" : "cắt đầy khung"}` : ""}`,
+      value: formatPlan(settings.formats).map((p) => `${VIDEO_FORMATS[p.format].label}${p.whole ? " (1 video dài)" : ""}`).join(" + ") +
+        (settings.formats.some((f) => f !== "original") ? ` · ${settings.fit === "blur" ? "nền mờ" : "cắt đầy khung"}` : ""),
     },
     {
       step: 3, label: "Mỗi video",
@@ -246,6 +269,21 @@ export function NewJobPage() {
                     : "Tự lấy theo tiêu đề video nếu bỏ trống"}
                 />
               </label>
+              <div className="quick-create">
+                <Zap size={20} className="quick-icon" />
+                <div className="spacer">
+                  <b>Tạo nhanh với cài đặt mặc định</b>
+                  <div className="small muted">{quickSummary ?? "…"}</div>
+                  {quickProblem && hasSource && <div className="small warn-text">{quickProblem}</div>}
+                </div>
+                <button
+                  className="primary" disabled={!hasSource || !!quickProblem || uploading !== null}
+                  title={hasSource ? undefined : "Đưa nguồn truyện vào trước"}
+                  onClick={() => quickSettings && void create(quickSettings)}
+                >
+                  {uploading !== null ? <><LoaderCircle size={16} className="spin" /> {Math.round(uploading * 100)}%</> : <><Zap size={16} /> Tạo nhanh</>}
+                </button>
+              </div>
             </section>
           )}
 
@@ -301,6 +339,12 @@ export function NewJobPage() {
                   </div>
                 ))}
               </dl>
+              <div className="row defaults-row">
+                <button onClick={saveAsDefaults} disabled={isDefault || savingDefaults}>
+                  <Save size={15} /> {isDefault ? "Đang là cài đặt mặc định" : "Lưu làm cài đặt mặc định"}
+                </button>
+                <span className="small muted">Dùng cho nút Tạo nhanh và mỗi lần tạo video mới (trừ video nền: luôn chọn cả thư viện).</span>
+              </div>
               {problems.map((p) => (
                 <div key={p.text} className={`alert ${p.warning ? "warn" : "error"}`}>
                   <CircleAlert size={16} />

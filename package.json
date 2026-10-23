@@ -11,7 +11,8 @@
     "build": "vite build",
     "start": "vite build && tsx server/index.ts",
     "setup:whisper": "node scripts/setup-whisper.mjs",
-    "update:ytdlp": "node scripts/setup-whisper.mjs",
+    "setup:olvroc": "node scripts/setup-olvroc.mjs",
+    "update:ytdlp": "node scripts/setup-whisper.mjs --ytdlp-only",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

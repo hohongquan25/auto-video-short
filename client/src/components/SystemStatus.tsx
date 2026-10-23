@@ -11,6 +11,8 @@ interface Item {
   optional?: boolean;
   detail: string;
   fix?: string;
+  /** A link that sets it up, e.g. connecting a Google account. */
+  link?: { href: string; label: string };
 }
 
 export function useSystemItems(): Item[] | null {
@@ -45,14 +47,24 @@ export function useSystemItems(): Item[] | null {
         : "Cài: npm i -g @anthropic-ai/claude-code, rồi chạy: claude để đăng nhập",
     },
     {
-      key: "vbee", label: "Vbee", ok: s.vbee.ok, optional: true,
-      detail: s.vbee.ok ? `${s.vbee.voices} giọng tiếng Việt` : s.vbee.error ?? "Chưa cấu hình",
-      fix: "Đặt VBEE_APP_ID và VBEE_TOKEN (lấy trong Vbee Studio) vào .env.local rồi khởi động lại server",
+      key: "olvroc", label: "OlvRoc", ok: s.olvroc.ok, optional: true,
+      detail: s.olvroc.ok ? `${s.olvroc.voices} giọng tiếng Việt miễn phí` : s.olvroc.error ?? "Chưa cài",
+      fix: "Chạy: pnpm setup:whisper (thư viện) và pnpm setup:olvroc (model ~520 MB)",
     },
     {
       key: "gemini", label: "Gemini", ok: s.gemini.ok, optional: true,
       detail: s.gemini.ok ? s.gemini.model : "Chưa có API key",
       fix: "Thêm GEMINI_API_KEY vào .env.local rồi khởi động lại server",
+    },
+    {
+      key: "google", label: "Google Drive & Sheet", ok: s.google.ok, optional: true,
+      detail: s.google.ok
+        ? `${s.google.account ?? "Đã kết nối"} · ${s.google.folderUrl ? "lưu vào thư mục đã chọn" : "sẽ tự tạo thư mục \"Story Studio\""}`
+        : s.google.error ?? "Chưa cấu hình",
+      fix: s.google.canConnect
+        ? "Bấm \"Kết nối Google\" và đăng nhập tài khoản sẽ chứa video"
+        : "Điền mục Google Drive trong .env.local (xem .env.example và docs/n8n.md) rồi khởi động lại server",
+      link: s.google.canConnect ? { href: "/api/google/connect", label: s.google.ok ? "Kết nối lại" : "Kết nối Google" } : undefined,
     },
   ];
 }
@@ -79,12 +91,19 @@ export function SystemStatusPanel() {
           <RefreshCw size={13} className={checking ? "spin" : ""} />
         </button>
       </div>
-      {items.map((it) => (
-        <div key={it.key} className="sys-row" title={it.ok ? it.detail : `${it.detail}\n→ ${it.fix}`}>
-          <span className={`dot ${it.ok ? "ok" : it.optional ? "off" : "bad"}`} />
-          <span className="sys-label">{it.label}</span>
-        </div>
-      ))}
+      {items.map((it) => {
+        const title = it.ok ? it.detail : `${it.detail}\n→ ${it.fix}`;
+        const row = (
+          <>
+            <span className={`dot ${it.ok ? "ok" : it.optional ? "off" : "bad"}`} />
+            <span className="sys-label">{it.label}</span>
+          </>
+        );
+        // Not ready yet, and a click sets it up.
+        return !it.ok && it.link
+          ? <a key={it.key} className="sys-row" href={it.link.href} title={`${title}\n(bấm để ${it.link.label.toLowerCase()})`}>{row}</a>
+          : <div key={it.key} className="sys-row" title={title}>{row}</div>;
+      })}
     </div>
   );
 }
@@ -100,7 +119,7 @@ export function SetupGuide({ hasJobs }: { hasJobs: boolean }) {
       key: it.key, ok: it.ok, optional: it.optional,
       title: it.ok ? `${it.label} đã sẵn sàng` : it.optional ? `${it.label}: chưa cấu hình (không bắt buộc)` : `${it.label}: chưa sẵn sàng`,
       desc: it.ok ? it.detail : `${it.detail}. ${it.fix}`,
-      action: null as ReactNode,
+      action: (it.link ? <a className="btn small" href={it.link.href}>{it.link.label}</a> : null) as ReactNode,
     })),
     {
       key: "bg", ok: backgrounds.length > 0, optional: false,

@@ -40,3 +40,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 export const useToast = () => useContext(ToastContext);
 
 export const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+export async function copyText(text: string, toast: ReturnType<typeof useToast>, what: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("success", `Đã sao chép ${what}`);
+  } catch {
+    toast("error", "Trình duyệt không cho phép sao chép");
+  }
+}

@@ -1,29 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Bot, Captions, Check, ClipboardCheck, Crop, Droplet, Film, FileText, LoaderCircle, Monitor, Pause, Play, Proportions, RotateCcw,
+  Bot, Captions, Check, ClipboardCheck, Crop, Droplet, Film, FileText, LoaderCircle, Monitor, Pause, Play, Plus, Proportions, RotateCcw,
   Smartphone, Sparkles, TriangleAlert, User, UserRound, type LucideIcon,
 } from "lucide-react";
 import {
   api, backgroundUrl, voicePreviewUrl, type AiProvider, type Background, type FitMode, type JobSettings, type Meta, type Style,
   type VideoFormat, type Voice,
 } from "../api";
-import { VIDEO_FORMATS, formatDuration, stripExt } from "../format";
+import { FORMAT_ORDER, VIDEO_FORMATS, formatDuration, formatPlan, lookStyle, playAt, stripExt } from "../format";
 import { useLibrary } from "../useLibrary";
 import { FileDrop } from "./FileDrop";
+import { BACKGROUNDS_PER_PAGE, Pager, usePaging } from "./Pager";
 import { errorMessage, useToast } from "./Toast";
-
-export const DEFAULT_SETTINGS: Omit<JobSettings, "styleId" | "backgroundId" | "aiProvider"> = {
-  voice: "vi-VN-HoaiMyNeural",
-  rate: "+0%",
-  reviewBeforeTts: false,
-  subtitles: true,
-  fullVideo: true,
-  format: "original",
-  fit: "blur",
-  minPartSec: 120,
-  maxPartSec: 300,
-};
 
 type Set = (patch: Partial<JobSettings>) => void;
 
@@ -32,11 +21,6 @@ type Set = (patch: Partial<JobSettings>) => void;
 export const providerReady = (meta: Meta, p: AiProvider) => (p === "claude" ? meta.system.claude.ok : meta.geminiConfigured);
 
 /** Claude when signed in, otherwise Gemini if it has a key, otherwise Claude (with a sign-in hint). */
-export function defaultProvider(meta: Meta): AiProvider {
-  if (meta.system.claude.ok) return "claude";
-  return meta.geminiConfigured ? "gemini" : "claude";
-}
-
 function ProviderFix({ meta, provider }: { meta: Meta; provider: AiProvider }) {
   if (providerReady(meta, provider)) return null;
   const c = meta.system.claude;
@@ -60,7 +44,7 @@ function ProviderFix({ meta, provider }: { meta: Meta; provider: AiProvider }) {
 }
 
 export function ProviderPicker({ value, set, meta, label = "AI dùng để viết lại" }: {
-  value: JobSettings; set: Set; meta: Meta; label?: string;
+  value: { aiProvider: AiProvider }; set: (patch: { aiProvider: AiProvider }) => void; meta: Meta; label?: string;
 }) {
   const c = meta.system.claude;
   const options: { id: AiProvider; title: string; desc: string; status: string }[] = [
@@ -161,47 +145,30 @@ export function ReviewToggle({ value, set }: { value: JobSettings; set: Set }) {
 
 // ── Voice ───────────────────────────────────────────────────────────────────
 
-/** Vbee names look like "HN - Ngọc Huyền": split off the accent region. */
-function splitVoiceName(name: string): { name: string; region: string | null } {
-  const m = /^(HN|SG|HUE|Huế|DN)\s*-\s*(.+)$/i.exec(name);
-  if (!m) return { name, region: null };
-  const region = { HN: "Giọng Bắc", SG: "Giọng Nam", HUE: "Giọng Huế", "HUẾ": "Giọng Huế", DN: "Giọng Trung" }[m[1].toUpperCase()] ?? m[1];
-  return { name: m[2], region };
-}
-
 type GenderFilter = "all" | "female" | "male";
 
-/** "hn_female_ngochuyen_full_48k-fhg" → "48 kHz"; tells apart Vbee voices sharing a name. */
-const sampleRate = (id: string) => {
-  const m = /_(\d{2})k[-_]/.exec(id);
-  return m ? `${m[1]} kHz` : null;
-};
+type VoiceSettings = Pick<JobSettings, "voice" | "rate">;
 
-/** A Vbee voice when Vbee is connected (Ngọc Huyền if available), else the default Edge voice. */
-export function defaultVoice(meta: Meta): string {
-  const vbee = meta.voices.filter((v) => v.provider === "vbee");
-  if (!meta.system.vbee.ok || vbee.length === 0) return DEFAULT_SETTINGS.voice;
-  return (vbee.find((v) => v.id.includes("ngochuyen")) ?? vbee.find((v) => v.gender === "female") ?? vbee[0]).id;
-}
-
-export function VoicePicker({ value, set, meta, speechSec }: { value: JobSettings; set: Set; meta: Meta; speechSec?: number | null }) {
+/** Shared by story and summary jobs, which both read with a voice at a speed. */
+export function VoicePicker({ value, set, meta, speechSec }: {
+  value: VoiceSettings; set: (patch: Partial<VoiceSettings>) => void; meta: Meta; speechSec?: number | null;
+}) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState<{ voice: string; loading: boolean } | null>(null);
   const [gender, setGender] = useState<GenderFilter>("all");
   const toast = useToast();
   const rateNum = parseInt(value.rate, 10) || 0;
-  const vbeeVoices = meta.voices.filter((v) => v.provider === "vbee");
+  const olvrocVoices = meta.voices.filter((v) => v.provider === "olvroc");
   const edgeVoices = meta.voices.filter((v) => v.provider === "edge");
-  const vbee = meta.system.vbee;
+  const olvroc = meta.system.olvroc;
 
   useEffect(() => () => audio.current?.pause(), []);
 
   const preview = (v: Voice) => {
     audio.current?.pause();
     if (playing?.voice === v.id) return setPlaying(null);
-    // Vbee: the provider's own demo clip (free). Edge: synthesized by our server at the chosen speed.
-    const url = v.provider === "vbee" ? v.demoUrl : voicePreviewUrl(v.id, value.rate);
-    if (!url) return toast("error", "Giọng này không có mẫu nghe thử");
+    // Synthesized by our server at the chosen speed.
+    const url = voicePreviewUrl(v.id, value.rate);
     const el = new Audio(url);
     audio.current = el;
     setPlaying({ voice: v.id, loading: true });
@@ -209,7 +176,6 @@ export function VoicePicker({ value, set, meta, speechSec }: { value: JobSetting
     el.onended = () => setPlaying(null);
     el.onerror = async () => {
       setPlaying(null);
-      if (v.provider === "vbee") return toast("error", "Không phát được mẫu giọng của Vbee");
       // The <audio> element hides the server's message, so fetch it for the toast.
       const res = await fetch(url).catch(() => null);
       const data = res ? await res.json().catch(() => null) : null;
@@ -219,7 +185,6 @@ export function VoicePicker({ value, set, meta, speechSec }: { value: JobSetting
   };
 
   const card = (v: Voice) => {
-    const { name, region } = splitVoiceName(v.name);
     const isPlaying = playing?.voice === v.id;
     const genderText = v.gender === "male" ? "Nam" : v.gender === "female" ? "Nữ" : null;
     return (
@@ -231,14 +196,13 @@ export function VoicePicker({ value, set, meta, speechSec }: { value: JobSetting
       >
         <span className="avatar">{v.gender === "male" ? <User size={22} /> : <UserRound size={22} />}</span>
         <span className="spacer">
-          <b>{name}</b>
+          <b>{v.name}</b>
           <span className="small muted block">
-            {[genderText, region, sampleRate(v.id)].filter(Boolean).join(" · ") || "Tiếng Việt"}
-            {v.creditFactor && v.creditFactor > 1 && <span className="tag warn credit">×{v.creditFactor} credit</span>}
+            {v.detail ?? genderText ?? "Tiếng Việt"}
           </span>
         </span>
         <button
-          type="button" className="round-btn" aria-label={`Nghe thử giọng ${name}`}
+          type="button" className="round-btn" aria-label={`Nghe thử giọng ${v.name}`}
           onClick={(e) => {
             e.stopPropagation();
             preview(v);
@@ -250,34 +214,39 @@ export function VoicePicker({ value, set, meta, speechSec }: { value: JobSetting
     );
   };
 
-  const shownVbee = vbeeVoices.filter((v) => gender === "all" || v.gender === gender);
+  const shown = (voices: Voice[]) => voices.filter((v) => gender === "all" || v.gender === gender);
+
+  const genderChips = () => (
+    <div className="chips">
+      {(["all", "female", "male"] as const).map((g) => (
+        <button
+          key={g} type="button" className={`chip ${gender === g ? "on" : ""}`}
+          onClick={() => setGender(g)}
+        >
+          {{ all: "Tất cả", female: "Nữ", male: "Nam" }[g]}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <>
       <div className="voice-group-head">
-        <b>Vbee</b>
+        <b>OlvRoc</b>
         <span className="small muted">
-          {vbee.ok ? `${vbeeVoices.length} giọng · tính phí theo ký tự · nghe thử bằng mẫu của Vbee` : "Giọng đọc tiếng Việt trả phí"}
+          {olvroc.ok
+            ? `${olvrocVoices.length} giọng · miễn phí · chạy trên máy này, nghe thử lần đầu phải chờ nạp model`
+            : "Giọng đọc tiếng Việt miễn phí, chạy trên máy"}
         </span>
-        {vbee.ok && vbeeVoices.length > 6 && (
-          <div className="chips">
-            {(["all", "female", "male"] as const).map((g) => (
-              <button key={g} type="button" className={`chip ${gender === g ? "on" : ""}`} onClick={() => setGender(g)}>
-                {{ all: "Tất cả", female: "Nữ", male: "Nam" }[g]}
-              </button>
-            ))}
-          </div>
-        )}
+        {olvroc.ok && olvrocVoices.length > 6 && genderChips()}
       </div>
-      {vbee.ok ? (
-        <div className="choice-grid two voice-scroll">{shownVbee.map(card)}</div>
+      {olvroc.ok ? (
+        <div className="choice-grid two voice-scroll">{shown(olvrocVoices).map(card)}</div>
       ) : (
         <div className="alert warn">
           <TriangleAlert size={16} />
           <div>
-            {vbee.configured
-              ? <>Không kết nối được Vbee: {vbee.error}</>
-              : <>{vbee.error}. Lấy App ID và Token trong Vbee Studio, điền vào <code>.env.local</code> rồi khởi động lại server.</>}
+            Chưa dùng được OlvRoc: {olvroc.error}. Chạy <code>pnpm setup:whisper</code> và <code>pnpm setup:olvroc</code>, rồi bấm ↻ ở mục Hệ thống.
           </div>
         </div>
       )}
@@ -311,17 +280,21 @@ export function VoicePicker({ value, set, meta, speechSec }: { value: JobSetting
 
 // ── Background ──────────────────────────────────────────────────────────────
 
-function BackgroundTile({ bg, selected, onSelect }: { bg: Background; selected: boolean; onSelect: () => void }) {
-  const video = useRef<HTMLVideoElement>(null);
+function BackgroundTile({ bg, picked, onToggle }: { bg: Background; picked: boolean; onToggle: () => void }) {
+  const video = useRef<HTMLVideoElement | null>(null);
   return (
     <button
-      type="button" className={`bg-tile ${selected ? "selected" : ""}`} onClick={onSelect}
+      type="button" className={`bg-tile ${picked ? "picked" : "off"}`} aria-pressed={picked} onClick={onToggle}
+      title={picked ? "Bấm để bỏ video này" : "Bấm để dùng video này"}
       onMouseEnter={() => void video.current?.play().catch(() => {})}
       onMouseLeave={() => video.current?.pause()}
     >
-      <video ref={video} src={`${backgroundUrl(bg.file)}#t=0.5`} muted loop playsInline preload="metadata" />
+      <video
+        ref={(el) => { video.current = el; playAt(bg.speed)(el); }}
+        src={`${backgroundUrl(bg.file)}#t=0.5`} style={lookStyle(bg)} muted loop playsInline preload="metadata"
+      />
       <span className="bg-duration">{formatDuration(bg.durationSec)}</span>
-      {selected && <span className="bg-check"><Check size={16} strokeWidth={3} /></span>}
+      <span className="bg-check">{picked && <Check size={16} strokeWidth={3} />}</span>
       <span className="bg-name">{bg.name}</span>
     </button>
   );
@@ -330,14 +303,27 @@ function BackgroundTile({ bg, selected, onSelect }: { bg: Background; selected: 
 export function BackgroundPicker({ value, set }: { value: JobSettings; set: Set }) {
   const { backgrounds, reload } = useLibrary();
   const [uploading, setUploading] = useState<number | null>(null);
+  const paging = usePaging(backgrounds, BACKGROUNDS_PER_PAGE);
+  const fileInput = useRef<HTMLInputElement>(null);
   const toast = useToast();
+  const chosen = backgrounds.filter((b) => value.backgroundIds.includes(b.id));
+  const footageSec = chosen.reduce((s, b) => s + b.durationSec / (b.speed ?? 1), 0);
+
+  const toggle = (id: string) => {
+    const on = value.backgroundIds.includes(id);
+    // At least one stays chosen.
+    if (on && chosen.length === 1) return;
+    set({ backgroundIds: on ? value.backgroundIds.filter((x) => x !== id) : [...value.backgroundIds, id] });
+  };
 
   const upload = async (file: File) => {
     setUploading(0);
     try {
       const bg = await api.uploadBackground(file, stripExt(file.name), setUploading);
       await reload();
-      set({ backgroundId: bg.id });
+      set({ backgroundIds: [...value.backgroundIds, bg.id] });
+      // New videos are added at the end, so show the page they landed on.
+      paging.setPage(Math.floor(backgrounds.length / BACKGROUNDS_PER_PAGE));
       toast("success", `Đã thêm video nền "${bg.name}"`);
     } catch (err) {
       toast("error", errorMessage(err));
@@ -346,32 +332,58 @@ export function BackgroundPicker({ value, set }: { value: JobSettings; set: Set 
     }
   };
 
+  if (backgrounds.length === 0) {
+    return uploading !== null ? (
+      <div className="dropzone disabled">
+        <LoaderCircle size={28} className="spin drop-icon" />
+        <div className="drop-title">Đang tải lên {Math.round(uploading * 100)}%</div>
+        <div className="progress"><div style={{ width: `${uploading * 100}%` }} /></div>
+      </div>
+    ) : (
+      <FileDrop accept="video/*,.mkv" onFile={upload} title="Tải video nền đầu tiên" hint="mp4, mov, mkv, webm" />
+    );
+  }
+
   return (
     <>
-      <div className="bg-grid">
-        {backgrounds.map((b) => (
-          <BackgroundTile key={b.id} bg={b} selected={value.backgroundId === b.id} onSelect={() => set({ backgroundId: b.id })} />
-        ))}
+      <div className="bg-picker-head">
+        <span className="spacer">
+          Dùng <b>{chosen.length === backgrounds.length ? `cả ${chosen.length}` : `${chosen.length}/${backgrounds.length}`}</b> video
+          <span className="muted"> · tổng {formatDuration(footageSec)}</span>
+        </span>
+        <button
+          type="button" className="small" disabled={chosen.length === backgrounds.length}
+          onClick={() => set({ backgroundIds: backgrounds.map((b) => b.id) })}
+        >
+          Chọn tất cả
+        </button>
         {uploading !== null ? (
-          <div className="dropzone compact disabled">
-            <LoaderCircle size={22} className="spin drop-icon" />
-            <div className="drop-title">Đang tải lên {Math.round(uploading * 100)}%</div>
-            <div className="progress"><div style={{ width: `${uploading * 100}%` }} /></div>
-          </div>
+          <span className="small muted"><LoaderCircle size={14} className="spin inline-icon" /> Đang tải lên {Math.round(uploading * 100)}%</span>
         ) : (
-          <FileDrop
-            compact accept="video/*,.mkv" onFile={upload}
-            title={backgrounds.length ? "Thêm video nền" : "Tải video nền đầu tiên"}
-            hint="mp4, mov, mkv, webm"
-          />
+          <button type="button" className="small" onClick={() => fileInput.current?.click()}><Plus size={14} /> Thêm video nền</button>
         )}
+        <input
+          ref={fileInput} type="file" accept="video/*,.mkv" hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void upload(f);
+            e.target.value = "";
+          }}
+        />
       </div>
-      <div className="small muted">Video nền tự lặp lại cho đủ độ dài giọng đọc, âm thanh gốc của video nền được tắt.</div>
+      <div className="bg-grid wide">
+        {paging.items.map((b) => <BackgroundTile key={b.id} bg={b} picked={value.backgroundIds.includes(b.id)} onToggle={() => toggle(b.id)} />)}
+      </div>
+      <Pager paging={paging} label="Phân trang video nền" />
+      <div className="small muted">
+        Mỗi video được ghép từ các video nền đã chọn theo thứ tự ngẫu nhiên, chỉ lặp lại khi đã dùng hết. Bấm vào video để bỏ chọn.
+        Âm thanh gốc của video nền được tắt.
+      </div>
     </>
   );
 }
 
-export function SubtitleToggle({ value, set }: { value: JobSettings; set: Set }) {
+export function SubtitleToggle({ value, set }: { value: Pick<JobSettings, "subtitles">; set: (patch: Pick<JobSettings, "subtitles">) => void }) {
   return (
     <label className={`switch-card ${value.subtitles ? "on" : ""}`}>
       <Captions size={20} />
@@ -399,19 +411,22 @@ export function FullVideoToggle({ value, set }: { value: JobSettings; set: Set }
 
 // ── Output format ───────────────────────────────────────────────────────────
 
-const FORMAT_ICONS: Record<VideoFormat, LucideIcon> = { tiktok: Smartphone, youtube: Monitor, original: Proportions };
-const FIT_OPTIONS: { id: FitMode; label: string; desc: string; icon: LucideIcon }[] = [
+export const FORMAT_ICONS: Record<VideoFormat, LucideIcon> = { tiktok: Smartphone, youtube: Monitor, original: Proportions };
+export const FIT_OPTIONS: { id: FitMode; label: string; desc: string; icon: LucideIcon }[] = [
   { id: "blur", label: "Nền mờ", desc: "giữ trọn video nền, lấp chỗ trống bằng nền mờ", icon: Droplet },
   { id: "crop", label: "Cắt cho đầy khung", desc: "phóng to, cắt bớt phần thừa", icon: Crop },
 ];
 
 /** What the chosen background will look like in the output frame, built with CSS from the same clip. */
-function FramePreview({ src, format, fit }: { src: string; format: VideoFormat; fit: FitMode }) {
+function FramePreview({ bg, format, fit }: { bg: Background; format: VideoFormat; fit: FitMode }) {
   const size = VIDEO_FORMATS[format].size!;
+  const src = backgroundUrl(bg.file);
   return (
     <div className={`frame-preview ${size.height > size.width ? "tall" : "wide"}`} style={{ aspectRatio: `${size.width} / ${size.height}` }}>
-      {fit === "blur" && <video className="fp-blur" src={src} muted loop autoPlay playsInline aria-hidden />}
-      <video className={fit === "blur" ? "fp-fit" : "fp-cover"} src={src} muted loop autoPlay playsInline aria-hidden />
+      <div className="fp-look" style={lookStyle(bg)}>
+        {fit === "blur" && <video ref={playAt(bg.speed)} className="fp-blur" src={src} muted loop autoPlay playsInline aria-hidden />}
+        <video ref={playAt(bg.speed)} className={fit === "blur" ? "fp-fit" : "fp-cover"} src={src} muted loop autoPlay playsInline aria-hidden />
+      </div>
       <span className="fp-sub">Phụ đề nằm ở đây</span>
     </div>
   );
@@ -419,25 +434,39 @@ function FramePreview({ src, format, fit }: { src: string; format: VideoFormat; 
 
 export function FormatPicker({ value, set }: { value: JobSettings; set: Set }) {
   const { backgrounds } = useLibrary();
-  const bg = backgrounds.find((b) => b.id === value.backgroundId);
+  // The preview shows the first chosen background.
+  const bg = backgrounds.find((b) => value.backgroundIds.includes(b.id));
+  const framed = FORMAT_ORDER.filter((f) => f !== "original" && value.formats.includes(f));
+  const whole = formatPlan(value.formats).find((p) => p.whole);
+  // At least one format stays chosen.
+  const toggle = (f: VideoFormat) => {
+    const on = value.formats.includes(f);
+    if (on && value.formats.length === 1) return;
+    set({ formats: on ? value.formats.filter((x) => x !== f) : FORMAT_ORDER.filter((x) => x === f || value.formats.includes(x)) });
+  };
   return (
     <>
       <div className="choice-grid">
-        {(["tiktok", "youtube", "original"] as const).map((f) => {
+        {FORMAT_ORDER.map((f) => {
           const Icon = FORMAT_ICONS[f];
+          const on = value.formats.includes(f);
           return (
-            <button type="button" key={f} className={`choice ${value.format === f ? "selected" : ""}`} onClick={() => set({ format: f })}>
+            <button type="button" key={f} className={`choice ${on ? "selected" : ""}`} aria-pressed={on} onClick={() => toggle(f)}>
               <div className="choice-head">
                 <Icon size={16} />
                 <b>{VIDEO_FORMATS[f].label}</b>
-                {value.format === f && <Check size={16} className="choice-check" />}
+                {on && <Check size={16} className="choice-check" />}
               </div>
               <div className="choice-body">{VIDEO_FORMATS[f].desc}</div>
             </button>
           );
         })}
       </div>
-      {value.format !== "original" && (
+      <div className="small muted format-hint">
+        Chọn được nhiều định dạng, mỗi định dạng ra một bộ video riêng.
+        {whole && <> Khi chọn cùng TikTok, <b>{VIDEO_FORMATS[whole.format].label}</b> chỉ ra <b>một video dài</b> cả truyện, không chia phần.</>}
+      </div>
+      {framed.length > 0 && (
         <div className="fit-row">
           <div className="spacer">
             <div className="field-label">Khi video nền khác khung hình</div>
@@ -449,7 +478,7 @@ export function FormatPicker({ value, set }: { value: JobSettings; set: Set }) {
               ))}
             </div>
           </div>
-          {bg && <FramePreview key={bg.id} src={backgroundUrl(bg.file)} format={value.format} fit={value.fit} />}
+          {bg && framed.map((f) => <FramePreview key={`${bg.id}-${f}`} bg={bg} format={f} fit={value.fit} />)}
         </div>
       )}
     </>

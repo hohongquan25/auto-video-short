@@ -2,7 +2,7 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, readdir
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { paths } from "./config.js";
-import type { Background, Brand, Job, Style } from "./types.js";
+import { SUMMARY_DEFAULTS, type Background, type Brand, type DefaultSettings, type FullVideo, type Job, type JobPart, type Style, type SummarySettings, type VideoFormat } from "./types.js";
 
 const ID_RE = /^[a-z0-9-]{4,64}$/;
 
@@ -76,7 +76,12 @@ export function saveJob(job: Job): void {
 
 /** Fill in fields added after a job file was first written. */
 function migrateJob(job: Job): Job {
-  const legacy = job as Job & { log: (Job["log"][number] | string)[] };
+  const legacy = job as Job & {
+    log: (Job["log"][number] | string)[];
+    settings: { format?: VideoFormat; backgroundId?: string };
+    parts?: JobPart[];
+    fullVideo?: FullVideo | null;
+  };
   job.log = legacy.log.map((e) => (typeof e === "string" ? { at: "", level: "info", step: null, msg: e } : e));
   job.timings ??= {};
   job.detail ??= null;
@@ -84,13 +89,37 @@ function migrateJob(job: Job): Job {
   job.settings.aiProvider ??= "gemini";
   job.settings.subtitles ??= false;
   job.settings.fullVideo ??= false;
-  job.settings.format ??= "original";
+  job.settings.formats ??= [legacy.settings.format ?? "original"];
+  delete legacy.settings.format;
   job.settings.fit ??= "blur";
-  job.fullVideo ??= null;
+  // Jobs from before several backgrounds had exactly one.
+  job.settings.backgroundIds ??= legacy.settings.backgroundId ? [legacy.settings.backgroundId] : [];
+  delete legacy.settings.backgroundId;
+  // Jobs from before several formats kept their one set of videos at the top of the parts folder.
+  if (!job.outputs) {
+    const parts = legacy.parts ?? [];
+    const fullVideo = legacy.fullVideo ?? null;
+    job.outputs = parts.length || fullVideo ? [{ format: job.settings.formats[0], parts, fullVideo }] : [];
+  }
+  job.publish ??= null;
+  delete legacy.parts;
+  delete legacy.fullVideo;
   job.callbackUrl ??= null;
   job.sourceUrl ??= null;
   job.sourceInfo ??= null;
   job.sourceTopic ??= null;
+  job.drive ??= null;
+  job.kind ??= "story";
+  job.summary ??= null;
+  // Summaries from before narration kept the video's own sound, and their subtitles were "none", "source" or a language.
+  if (job.summary) {
+    const s = job.summary.settings as SummarySettings & { subtitles: boolean | string; summaryLanguage?: string };
+    if (typeof s.subtitles === "string") s.subtitles = s.subtitles !== "none";
+    s.voice ??= SUMMARY_DEFAULTS.voice;
+    s.rate ??= SUMMARY_DEFAULTS.rate;
+    s.focus ??= SUMMARY_DEFAULTS.focus;
+    delete s.summaryLanguage;
+  }
   return job;
 }
 
@@ -152,4 +181,45 @@ export function getBrand(): Brand {
 
 export function saveBrand(brand: Brand): void {
   writeJson(paths.brandFile, brand);
+}
+
+// ── Default job settings ────────────────────────────────────────────────────
+
+/** The defaults the user saved, or null while the built-in ones apply. */
+export function getSavedDefaults(): DefaultSettings | null {
+  return readJson<DefaultSettings | null>(paths.defaultsFile, null);
+}
+
+export function saveDefaults(defaults: DefaultSettings): void {
+  writeJson(paths.defaultsFile, defaults);
+}
+
+/** The summary settings the user saved, or null while the built-in ones apply. */
+export function getSavedSummaryDefaults(): SummarySettings | null {
+  const saved = readJson<Partial<SummarySettings> | null>(paths.summaryDefaultsFile, null);
+  // Settings added since they were saved take their built-in value.
+  return saved && { ...SUMMARY_DEFAULTS, ...saved };
+}
+
+export function saveSummaryDefaults(defaults: SummarySettings): void {
+  writeJson(paths.summaryDefaultsFile, defaults);
+}
+
+// ── Google account ──────────────────────────────────────────────────────────
+
+/** What the app remembers about the Google account connected through OAuth. */
+export interface GoogleState {
+  refreshToken?: string;
+  account?: string;
+  /** The folder and sheet the app made itself when none were configured. */
+  folderId?: string;
+  sheetId?: string;
+}
+
+export function getGoogleState(): GoogleState {
+  return readJson<GoogleState>(paths.googleFile, {});
+}
+
+export function saveGoogleState(patch: GoogleState): void {
+  writeJson(paths.googleFile, { ...getGoogleState(), ...patch });
 }

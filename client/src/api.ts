@@ -1,11 +1,11 @@
 import type {
-  AiProvider, Background, Brand, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
-  VideoFormat, Voice,
+  AiProvider, Background, BackgroundLook, Brand, DefaultSettings, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
+  SummaryClip, SummaryResult, SummarySettings, VideoFormat, Voice,
 } from "../../server/types";
 
 export type {
-  AiProvider, Background, Brand, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
-  VideoFormat, Voice,
+  AiProvider, Background, BackgroundLook, Brand, DefaultSettings, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
+  SummaryClip, SummaryResult, SummarySettings, VideoFormat, Voice,
 };
 
 export interface Meta {
@@ -75,7 +75,26 @@ export const api = {
   rerun: (id: string, fromStep?: Step, settings?: JobSettings) =>
     request<Job>("POST", `/api/jobs/${id}/rerun`, { fromStep, settings }),
   stop: (id: string) => request<Job>("POST", `/api/jobs/${id}/stop`),
+  renameJob: (id: string, title: string) => request<Job>("PATCH", `/api/jobs/${id}`, { title }),
   deleteJob: (id: string) => request<void>("DELETE", `/api/jobs/${id}`),
+
+  createSummary: (file: File, captions: File | null, title: string, settings: SummarySettings, onProgress: (f: number) => void) => {
+    const form = new FormData();
+    form.append("media", file);
+    if (captions) form.append("captions", captions);
+    form.append("title", title);
+    form.append("settings", JSON.stringify(settings));
+    return upload<Job>("/api/summaries", form, onProgress);
+  },
+  createSummaryFromUrl: (url: string, title: string, settings: SummarySettings) =>
+    request<Job>("POST", "/api/summaries", { url, title, settings }),
+  rerunSummary: (id: string, fromStep: Step, summary?: SummarySettings) =>
+    request<Job>("POST", `/api/jobs/${id}/rerun`, { fromStep, summary }),
+
+  defaults: () => request<DefaultSettings>("GET", "/api/defaults"),
+  saveDefaults: (defaults: DefaultSettings) => request<DefaultSettings>("PUT", "/api/defaults", defaults),
+  summaryDefaults: () => request<SummarySettings>("GET", "/api/summary-defaults"),
+  saveSummaryDefaults: (defaults: SummarySettings) => request<SummarySettings>("PUT", "/api/summary-defaults", defaults),
 
   brand: () => request<Brand>("GET", "/api/brand"),
   saveBrand: (brand: Brand) => request<Brand>("PUT", "/api/brand", brand),
@@ -92,6 +111,7 @@ export const api = {
     form.append("name", name);
     return upload<Background>("/api/backgrounds", form, onProgress);
   },
+  updateBackground: (id: string, patch: BackgroundLook) => request<Background>("PATCH", `/api/backgrounds/${id}`, patch),
   deleteBackground: (id: string) => request<void>("DELETE", `/api/backgrounds/${id}`),
 };
 

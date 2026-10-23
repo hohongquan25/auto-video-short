@@ -1,0 +1,1059 @@
+{
+  "id": "ssYouTubeDangVd1",
+  "name": "YouTube - Đăng video",
+  "nodes": [
+    {
+      "id": "b3775e1e-64a4-5d85-a6ec-d8df59304132",
+      "name": "Theo lịch",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 21 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "94f5f258-0ac1-58ce-aa44-12178e9b0768",
+      "name": "Chạy tay",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        480
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "507451e7-93f0-5e56-bed6-bfccf06e6cac",
+      "name": "Đăng từ Telegram",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        660
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "51e2ed52-555f-54c7-ad1e-b4d71162561b",
+      "name": "Cấu hình YouTube",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "574747ec-d96b-5b2c-a212-1abd56726526",
+              "name": "privacy_status",
+              "value": "public",
+              "type": "string"
+            },
+            {
+              "id": "7beb48e0-09a6-5e49-80de-aa1cd8153410",
+              "name": "telegram_bot_token",
+              "value": "DAN_BOT_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "7551d7b0-90d5-5e5e-9e59-dc9bfdaaf6f6",
+              "name": "telegram_chat_id",
+              "value": "DAN_CHAT_ID",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "aeeafa13-583f-556a-b6a0-8f225f05346e",
+      "name": "Đọc Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        300
+      ],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ac85d294-ae18-5aba-abde-93723d56b37b",
+      "name": "Đọc cài đặt",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        660,
+        300
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CaiDat",
+          "mode": "name"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b0c66f68-d724-54f0-a5e4-778eeb8c5ccb",
+      "name": "Chọn video",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// YouTube không tự đăng: lượt theo lịch (21h) chỉ nhắn video kế tiếp kèm nút đăng (trang quản lý Telegram xử lý nút),\n// bấm mới đăng. Video kế tiếp: format = youtube đang pending, truyện cũ trước, trong mỗi truyện các phần trước, trọn bộ sau cùng.\n// Bấm đăng (ở tin nhắc hoặc màn hình một truyện) thì trang quản lý gọi workflow này kèm id: đăng đúng video đó, bỏ qua giờ hẹn.\n// Tạm dừng lịch trong trang quản lý (tab CaiDat: youtube_auto = off) thì 21h không nhắc; nút đăng vẫn dùng được.\n// Bấm từ Telegram mà không đăng được thì nhắn lý do.\nconst force = $('Đăng từ Telegram').isExecuted;\nconst want = force ? String($('Đăng từ Telegram').first().json.id ?? '') : '';\nconst rows = $('Đọc Sheet').all().map((i) => i.json);\n// Tab CaiDat chưa có thì lịch coi như đang bật; đọc lỗi kiểu khác thì lượt theo lịch thôi nhắc (không biết lịch có tạm dừng không).\nconst errorText = (e) => (typeof e === 'string' ? e : e?.message ?? JSON.stringify(e));\nconst flagRows = $('Đọc cài đặt').all().map((i) => i.json);\nconst flagError = flagRows.map((f) => f.error).find((e) => e && !/not found|unable to parse range/i.test(errorText(e)));\nlet auto = true;\nfor (const f of flagRows) if (f.key === 'youtube_auto') auto = String(f.value) !== 'off';\nif ((!auto || flagError) && !force) return [];\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n// Tên ngắn của truyện, như storyNameFromTitle của Story Studio: dòng đầu caption TikTok (\"Tên truyện | Phần 1/5\"),\n// hoặc tên rút từ tiêu đề khi caption cũ còn tiêu đề dài.\nconst TITLE_TAGS = /\\[[^\\]]*\\]|【[^】]*】|\\([^)]*\\)|#\\S*|\\b(cre|credit|nguồn|source)\\s*:.*$|\\d[\\d.,]*\\s*[kmb]?\\s*(views?|lượt xem|reactions?|likes?|lượt thích|comments?|bình luận|shares?)/giu;\nconst TITLE_SEPARATORS = /\\s+[-–—]\\s+|\\s*[|·•]\\s*|[:.]\\s+/u;\nconst TITLE_NOISE = /^(\\d+|full( bộ)?|trọn bộ|\\d+\\s*(phút|giờ|tiếng)|(tập|phần|part|ep)\\s*\\d+|.*\\b(audio|official|channel|radio|podcast)\\b.*|truyện (ngắn|audio|ma|hay|kể|kinh dị|ngôn tình|cổ tích|trinh thám)\\b.*)$/iu;\nconst nameFromTitle = (title) => {\n  const pieces = String(title ?? '').replace(TITLE_TAGS, ' ').split(TITLE_SEPARATORS).map((s) => s.replace(/[\"“”'‘’]/g, '').trim()).filter(Boolean);\n  return pieces.find((s) => !TITLE_NOISE.test(s)) ?? pieces.join(' ');\n};\nconst PART_SUFFIX = /\\s*(\\|\\s*Phần\\s*\\d+\\s*\\/\\s*\\d+|\\(trọn bộ\\))\\s*$/iu;\nconst NAME_MAX = 45;\n/** Tên ngắn của truyện của một dòng trong Sheet. Dòng YouTube không lấy caption (đó là mô tả YouTube). */\nconst shortName = (r) => {\n  const line = r.format === 'youtube' ? '' : String(r.post_description ?? '').split('\\n')[0].replace(PART_SUFFIX, '').trim();\n  for (const c of [line, nameFromTitle(line), nameFromTitle(r.post_title), nameFromTitle(r.title), String(r.title ?? '').trim()]) {\n    if (c && c.length <= NAME_MAX) return c;\n  }\n  const t = line || String(r.title || r.id || '');\n  return t.length > NAME_MAX ? `${t.slice(0, NAME_MAX - 1).replace(/\\s+\\S*$/, '')}…` : t;\n};\nconst mine = rows.filter((r) => r.format === 'youtube');\nconst rank = (r) => (r.kind === 'full' ? Infinity : Number(r.part || 0));\nconst order = (a, b) => String(a.job_id).localeCompare(String(b.job_id)) || rank(a) - rank(b);\nconst due = (r) => !r.scheduled_at || DateTime.fromISO(String(r.scheduled_at)) <= $now;\nconst label = (r) => String(r.post_title || r.title || r.id);\nconst info = (text) => (force ? [{ json: { mode: 'info', text } }] : []);\n// Video đang đăng dở (khoá chưa quá 3 giờ) thì không đăng chồng, cũng không nhắc.\nconst sending = mine.find((r) => r.status === 'posting' && $now.diff(DateTime.fromISO(String(r.posted_at ?? '')), 'hours').hours < 3);\nif (sending) return info(`⏳ Đang đăng ${label(sending)} lên YouTube, xong bot sẽ nhắn link.`);\nif (want) {\n  const r = mine.find((x) => String(x.id) === want);\n  if (!r) return info('Không tìm thấy video YouTube này trong Sheet.');\n  if (r.status !== 'pending') return info(`${label(r)} đang ở trạng thái ${r.status}, không đăng.`);\n  return [{ json: { mode: 'send', row: r } }];\n}\nconst pending = mine.filter((r) => r.status === 'pending').sort(order);\nconst next = pending.find(due);\nif (!force) {\n  if (!next) return [];\n  const sec = Math.round(Number(next.duration_sec) || 0);\n  const pad = (n) => String(n).padStart(2, '0');\n  const length = sec >= 3600 ? `${Math.floor(sec / 3600)}:${pad(Math.floor(sec / 60) % 60)}:${pad(sec % 60)}` : `${Math.floor(sec / 60)}:${pad(sec % 60)}`;\n  const privacy = { public: 'công khai', unlisted: 'không công khai', private: 'riêng tư' }[$('Cấu hình YouTube').first().json.privacy_status] ?? 'công khai';\n  return [{ json: {\n    mode: 'info', parse_mode: 'HTML',\n    text: [\n      `⏰ <b>Đến giờ đăng YouTube</b> · ${pending.length} video đang chờ`,\n      '',\n      `📖 ${esc(shortName(next))}${next.part ? ` · Phần ${next.part}/${next.total_parts}` : ''}`,\n      `🎬 ${esc(label(next))}`,\n      `⏱ ${length}`,\n      '',\n      `Bấm nút bên dưới để đăng (${privacy}). Không bấm thì video vẫn chờ, lượt nhắc sau sẽ nhắc lại.`,\n    ].join('\\n'),\n    reply_markup: { inline_keyboard: [\n      [{ text: '✅ Đăng lên YouTube ngay', callback_data: `st|ytpost|${next.job_id}` }],\n      [{ text: '📖 Mở truyện', callback_data: `st|view|${next.job_id}` }],\n    ] },\n  } }];\n}\nif (next) return [{ json: { mode: 'send', row: next } }];\nconst later = pending[0];\nif (later) return info(`🕒 Video YouTube tiếp theo (${label(later)}) hẹn đăng lúc ${DateTime.fromISO(String(later.scheduled_at)).setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm dd/MM')}.`);\nreturn info('📭 Hết video YouTube để đăng.');"
+      }
+    },
+    {
+      "id": "d258b110-4ea9-5b9c-b06b-acbe4404b98a",
+      "name": "Chỉ báo tin?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2ed059ce-876f-5ca6-a825-2078b1f5a781",
+              "leftValue": "={{ $json.mode }}",
+              "rightValue": "info",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7b0f7898-1118-5215-ade9-78a6e1d15dcf",
+      "name": "Soạn tin báo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        520
+      ],
+      "parameters": {
+        "jsCode": "const cfg = $('Cấu hình YouTube').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\n// Tin nhắc đăng lúc 21h có định dạng HTML và nút đăng; tin báo khi bấm từ Telegram là chữ thường.\nreturn [{ json: { payload: {\n  chat_id: cfg.telegram_chat_id, text: $json.text,\n  ...($json.parse_mode ? { parse_mode: $json.parse_mode } : {}),\n  ...($json.reply_markup ? { reply_markup: $json.reply_markup } : {}),\n} } }];"
+      }
+    },
+    {
+      "id": "5ca6d525-acc2-5b08-a4c9-813232796761",
+      "name": "Lấy 1 video",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { ...$input.first().json.row, lock: $now.toISO() } }];"
+      }
+    },
+    {
+      "id": "4d712e2c-a60b-5d36-ac51-cff6941e819f",
+      "name": "Khoá dòng",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Lấy 1 video').first().json.id }}",
+            "status": "posting",
+            "posted_at": "={{ $('Lấy 1 video').first().json.lock }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "posted_at",
+              "displayName": "posted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "bb969b8f-03fc-56ad-94b1-4b74142de0ba",
+      "name": "Chờ chốt khoá",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        300
+      ],
+      "parameters": {
+        "amount": 3,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "caa619cd-4b3a-5b09-8b2c-5d624a7fae52",
+      "name": "Đọc lại dòng",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1980,
+        300
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id",
+              "lookupValue": "={{ $('Lấy 1 video').first().json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "53df8b7b-90cb-51db-80cf-5af031c7e207",
+      "name": "Còn giữ khoá?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Hai lượt cùng chọn một video (bấm hai lần liền, hoặc lịch chạy đúng lúc bấm): cả hai ghi khoá (posted_at) rồi đợi vài giây.\n// Lượt ghi sau cùng giữ video; lượt kia thấy khoá đã khác thì dừng, không gửi trùng.\n// Không đọc lại được dòng, hoặc posted_at không còn dạng ISO (Sheet tự đổi định dạng), thì không kiểm được: chạy tiếp như trước.\nconst me = $('Lấy 1 video').first().json;\nconst now = $input.all().map((i) => i.json).find((r) => String(r.id) === String(me.id));\nconst mine = DateTime.fromISO(String(me.lock ?? ''));\nconst seen = DateTime.fromISO(String(now?.posted_at ?? ''));\nif (now && mine.isValid && seen.isValid && seen.toMillis() !== mine.toMillis()) return [];\nreturn [{ json: me }];"
+      }
+    },
+    {
+      "id": "697441b5-84b4-54a2-a6b6-9638e00ad008",
+      "name": "Chuẩn bị nội dung",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// YouTube từ chối tiêu đề, mô tả có dấu < >, tiêu đề quá 100 ký tự, mô tả quá 5000 byte và thẻ tổng quá 500 ký tự.\nconst r = $('Lấy 1 video').first().json;\nconst clean = (s) => String(s ?? '').replace(/[<>]/g, '').trim();\nconst cut = (s, n) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);\nconst title = cut(clean(r.post_title) || clean(r.title) || 'Video', 100);\n// Hashtag của truyện ở cuối mô tả; YouTube hiện ba cái đầu phía trên tiêu đề.\nconst description = cut([clean(r.post_description), clean(r.hashtags)].filter(Boolean).join('\\n\\n'), 4500);\nconst tags = [];\nlet room = 450;\nfor (const t of String(r.tags ?? '').split(',').map((x) => clean(x).replace(/\"/g, '')).filter(Boolean)) {\n  // Thẻ có khoảng trắng bị YouTube tính thêm hai dấu ngoặc kép, mỗi thẻ thêm một dấu phẩy.\n  const cost = t.length + (t.includes(' ') ? 2 : 0) + 1;\n  if (tags.includes(t) || cost > room) continue;\n  tags.push(t);\n  room -= cost;\n}\nreturn [{ json: { title, description, tags: tags.join(',') } }];"
+      }
+    },
+    {
+      "id": "75aba8ce-f19e-5a7e-b77d-3199cb3b8921",
+      "name": "Tải video từ Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2640,
+        300
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Lấy 1 video').first().json.video_file_id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "ca2a6551-39e4-56bf-a593-2ff4e76bae53",
+      "name": "Đăng YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        2860,
+        300
+      ],
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $('Chuẩn bị nội dung').first().json.title }}",
+        "regionCode": "VN",
+        "categoryId": "24",
+        "binaryProperty": "data",
+        "options": {
+          "description": "={{ $('Chuẩn bị nội dung').first().json.description }}",
+          "tags": "={{ $('Chuẩn bị nội dung').first().json.tags }}",
+          "privacyStatus": "={{ $('Cấu hình YouTube').first().json.privacy_status }}"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "59bdcaa7-e2dd-500a-aec6-31a3f3e31cd2",
+      "name": "Ghi đã đăng",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3080,
+        300
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Lấy 1 video').first().json.id }}",
+            "status": "posted",
+            "posted_at": "={{ $now.toISO() }}",
+            "post_url": "={{ 'https://youtu.be/' + $('Đăng YouTube').first().json.id }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "posted_at",
+              "displayName": "posted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "post_url",
+              "displayName": "post_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1ee94019-bbec-515c-bf70-58ada037132c",
+      "name": "Có ảnh bìa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3300,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5b7e330b-23c9-52b0-b8a8-33176f759443",
+              "leftValue": "={{ $('Lấy 1 video').first().json.cover_file_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d6ab2d7b-f84f-5744-868b-fd316c47ba7c",
+      "name": "Tải ảnh bìa",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        3520,
+        220
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Lấy 1 video').first().json.cover_file_id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "fffa4631-293b-57fd-b397-f4504d044e2b",
+      "name": "Đặt ảnh bìa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3740,
+        220
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/upload/youtube/v3/thumbnails/set?uploadType=media&videoId={{ $('Đăng YouTube').first().json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/jpeg"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "fdcd9264-afd1-58b1-b5d8-9568268baabb",
+      "name": "Soạn tin đã đăng",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3960,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const cfg = $('Cấu hình YouTube').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst r = $('Lấy 1 video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst p = $('Chuẩn bị nội dung').first().json;\nconst video = $('Đăng YouTube').first().json;\nconst id = video.id;\nconst sec = Math.round(Number(r.duration_sec) || 0);\nconst pad = (n) => String(n).padStart(2, '0');\nconst length = sec >= 3600 ? `${Math.floor(sec / 3600)}:${pad(Math.floor(sec / 60) % 60)}:${pad(sec % 60)}` : `${Math.floor(sec / 60)}:${pad(sec % 60)}`;\n// Đi qua nhánh ảnh bìa thì kết quả của nó nằm ở đây; lỗi có trường error.\nconst last = $input.first().json;\nconst why = String(last.error?.message ?? last.error ?? '');\nconst cover = !r.cover_file_id ? null\n  : !last.error ? '🖼 Đã đặt ảnh bìa'\n  : `⚠️ Chưa đặt được ảnh bìa: ${esc(why.slice(0, 300))}` +\n    (/forbidden|permission|403/i.test(why) ? '\\nKênh cần xác minh số điện thoại tại youtube.com/verify mới được đặt ảnh bìa riêng.' : '');\n// YouTube có thể để video ở chế độ khác chế độ đã chọn (theo cài đặt của kênh): báo để mở YouTube Studio xem.\nconst privacy = video.status?.privacyStatus;\nconst wanted = cfg.privacy_status;\n// TikTok của truyện chỉ gửi khi bấm Bắt đầu: truyện còn TikTok chưa bắt đầu thì nhắc kèm nút (trang quản lý xử lý).\nconst flags = {};\nfor (const f of $('Đọc cài đặt').all().map((i) => i.json)) if (f.key) flags[f.key] = String(f.value ?? '');\nconst tiktok = $('Đọc Sheet').all().map((i) => i.json).filter((x) => x.job_id === r.job_id && (x.format === 'tiktok' || x.format === 'original'));\nconst flag = flags[`tiktok:${r.job_id}`];\nconst started = flag === 'on' || (flag !== 'off' && tiktok.some((x) => ['inbox', 'posted', 'posting', 'skipped'].includes(x.status)));\nconst askTikTok = !started && tiktok.some((x) => x.status === 'pending');\nconst text = [\n  '✅ <b>Đã đăng YouTube</b>',\n  `🎬 ${esc(p.title)}`,\n  `⏱ ${length}`,\n  `🔗 https://youtu.be/${id}`,\n  cover,\n  privacy && wanted && privacy !== wanted ? `⚠️ YouTube đang để video ở chế độ ${esc(privacy)} (đã chọn ${esc(wanted)}), mở YouTube Studio để xem.` : null,\n  askTikTok ? `\\n🎵 TikTok của truyện này ${flag === 'off' ? 'đang dừng' : 'chưa bắt đầu'}: bấm nút bên dưới khi muốn đăng TikTok.` : null,\n].filter(Boolean).join('\\n');\nreturn [{ json: { payload: {\n  chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text,\n  reply_markup: { inline_keyboard: [\n    [{ text: '🔗 Mở video', url: `https://youtu.be/${id}` }],\n    ...(askTikTok ? [[{ text: flag === 'off' ? '▶️ Chạy tiếp TikTok' : '🎵 Bắt đầu TikTok', callback_data: `st|ttstart|${r.job_id}` }]] : []),\n  ] },\n} } }];"
+      }
+    },
+    {
+      "id": "6abb99cd-898f-5200-92f6-5752f12a9c81",
+      "name": "Ghi lỗi",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3080,
+        560
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Lấy 1 video').first().json.id }}",
+            "status": "error",
+            "note": "={{ String($json.error?.message ?? $json.error ?? 'Lỗi không rõ').slice(0, 500) }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "5d96e673-162c-5ecf-b66c-1dcb50960d78",
+      "name": "Soạn tin báo lỗi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        560
+      ],
+      "parameters": {
+        "jsCode": "const cfg = $('Cấu hình YouTube').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst r = $('Lấy 1 video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst msg = String($input.first().json.note ?? '').slice(0, 1000);\nconst text = [\n  '❌ <b>Không đăng được video lên YouTube</b>',\n  `🎬 ${esc(r.post_title || r.title)}`,\n  '',\n  `<pre>${esc(msg || 'Lỗi không rõ, xem cột note trong Sheet')}</pre>`,\n  'Sửa xong bấm 🔁 Đăng lại: video quay về hàng chờ, đăng ở lượt kế tiếp.',\n].join('\\n');\n// Nút do trang quản lý Telegram xử lý.\nreturn [{ json: { payload: { chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text, reply_markup: { inline_keyboard: [[\n  { text: '🔁 Đăng lại', callback_data: `msg|retry|${r.id}` },\n  { text: '⏭ Bỏ qua', callback_data: `msg|skip|${r.id}` },\n]] } } } }];"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "1e8b5795-72b0-511d-8035-e7262f649bb1",
+      "name": "Gửi Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4180,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $('Cấu hình YouTube').first().json.telegram_bot_token }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "dcc60836-0a23-57c6-8239-b26d0247e8c3",
+      "name": "Lưu tin Telegram",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4400,
+        420
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "TelegramLog",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message_id": "={{ String($json.result.message_id) }}",
+            "date": "={{ $now.toISODate() }}",
+            "sent_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sent_at",
+              "displayName": "sent_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Theo lịch": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chạy tay": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cấu hình YouTube": {
+      "main": [
+        [
+          {
+            "node": "Đọc Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Khoá dòng": {
+      "main": [
+        [
+          {
+            "node": "Chờ chốt khoá",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chuẩn bị nội dung": {
+      "main": [
+        [
+          {
+            "node": "Tải video từ Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải video từ Drive": {
+      "main": [
+        [
+          {
+            "node": "Đăng YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đăng YouTube": {
+      "main": [
+        [
+          {
+            "node": "Ghi đã đăng",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ghi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi đã đăng": {
+      "main": [
+        [
+          {
+            "node": "Có ảnh bìa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có ảnh bìa?": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh bìa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soạn tin đã đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh bìa": {
+      "main": [
+        [
+          {
+            "node": "Đặt ảnh bìa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soạn tin đã đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đặt ảnh bìa": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin đã đăng",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soạn tin đã đăng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin đã đăng": {
+      "main": [
+        [
+          {
+            "node": "Gửi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ghi lỗi": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin báo lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin báo lỗi": {
+      "main": [
+        [
+          {
+            "node": "Gửi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gửi Telegram": {
+      "main": [
+        [
+          {
+            "node": "Lưu tin Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc Sheet": {
+      "main": [
+        [
+          {
+            "node": "Đọc cài đặt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc cài đặt": {
+      "main": [
+        [
+          {
+            "node": "Chọn video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chọn video": {
+      "main": [
+        [
+          {
+            "node": "Chỉ báo tin?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chỉ báo tin?": {
+      "main": [
+        [
+          {
+            "node": "Soạn tin báo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lấy 1 video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn tin báo": {
+      "main": [
+        [
+          {
+            "node": "Gửi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy 1 video": {
+      "main": [
+        [
+          {
+            "node": "Khoá dòng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đăng từ Telegram": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chờ chốt khoá": {
+      "main": [
+        [
+          {
+            "node": "Đọc lại dòng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lại dòng": {
+      "main": [
+        [
+          {
+            "node": "Còn giữ khoá?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Còn giữ khoá?": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị nội dung",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "none"
+  }
+}

@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { chunkText } from "../lib/text.js";
 import { probeDuration } from "../lib/ffmpeg.js";
 import { TTS_CHARS_PER_SEC, formatChars, formatDuration } from "../lib/format.js";
-import { FatalTtsError, vbeeSynthesize } from "../lib/vbee.js";
-import { voiceProvider } from "../types.js";
+import { FatalTtsError, olvrocSynthesize } from "../lib/olvroc.js";
+import { TTS_PROVIDER_LABELS, voiceProvider } from "../types.js";
 import type { StepReporter } from "./run-job.js";
 
 /**
@@ -36,11 +36,13 @@ export async function synthesizeToFile(text: string, voice: string, rate: string
   writeFileSync(outFile, buffer);
 }
 
-const PROVIDER_NAME = { edge: "Edge TTS", vbee: "Vbee" } as const;
-/** Edge TTS is a free endpoint, so stay gentle; Vbee is a paid API built for parallel use. */
-const CONCURRENCY = { edge: 1, vbee: 3 } as const;
+/**
+ * Edge TTS is a free endpoint, so stay gentle; OlvRoc runs on this machine's CPU, one segment at a time in a single worker.
+ */
+const CONCURRENCY = { edge: 1, olvroc: 1 } as const;
 
-async function synthesize(
+/** Read `text` aloud into `outFile` (MP3) with Edge TTS or OlvRoc, retrying what may pass. */
+export async function synthesize(
   text: string, voice: string, rate: string, outFile: string, r: StepReporter, label: string,
 ): Promise<void> {
   const provider = voiceProvider(voice);
@@ -49,7 +51,7 @@ async function synthesize(
   const delays = [2000, 5000, 10000, 20000, 40000];
   for (let attempt = 0; ; attempt++) {
     try {
-      if (provider === "vbee") await vbeeSynthesize(text, voice, rate, tmp, r.signal);
+      if (provider === "olvroc") await olvrocSynthesize(text, voice, rate, tmp, r.signal, (msg) => r.log(msg));
       else await synthesizeToFile(text, voice, rate, tmp);
       renameSync(tmp, outFile);
       return;
@@ -57,7 +59,7 @@ async function synthesize(
       rmSync(tmp, { force: true });
       if (r.signal.aborted || err instanceof FatalTtsError || attempt >= delays.length) throw err;
       const msg = (err instanceof Error ? err.message : String(err)).split("\n")[0].slice(0, 200);
-      r.log(`${label}: ${PROVIDER_NAME[provider]} lỗi "${msg}", thử lại lần ${attempt + 2}/${delays.length + 1} sau ${delays[attempt] / 1000}s`, "warn");
+      r.log(`${label}: ${TTS_PROVIDER_LABELS[provider]} lỗi "${msg}", thử lại lần ${attempt + 2}/${delays.length + 1} sau ${delays[attempt] / 1000}s`, "warn");
       await new Promise((res) => setTimeout(res, delays[attempt]));
     }
   }
@@ -97,7 +99,7 @@ export async function synthesizeScript(opts: {
   const concurrency = Math.min(CONCURRENCY[provider], chunks.length);
   r.log(
     `Chia kịch bản ${formatChars(script.length)} ký tự thành ${chunks.length} đoạn đọc (tối đa ${chunkChars} ký tự/đoạn), ` +
-    `dùng ${PROVIDER_NAME[provider]}${concurrency > 1 ? `, ${concurrency} đoạn song song` : ""}`,
+    `dùng ${TTS_PROVIDER_LABELS[provider]}${concurrency > 1 ? `, ${concurrency} đoạn song song` : ""}`,
   );
 
   const files = chunks.map((_, i) => join(workDir, `seg-${String(i + 1).padStart(4, "0")}.mp3`));

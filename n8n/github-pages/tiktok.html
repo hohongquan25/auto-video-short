@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kết nối TikTok – Story Studio</title>
+<style>body{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 16px}textarea{width:100%;height:90px;font:14px monospace}</style>
+</head><body>
+<h1>Kết nối TikTok</h1>
+<p id="msg">Đang đọc mã…</p>
+<textarea id="code" readonly></textarea>
+<p><button id="copy">Sao chép mã</button></p>
+<p>Dán mã này vào ô <b>code</b> của node "Cấu hình TikTok" trong workflow <b>TikTok - Kết nối</b> rồi chạy lại workflow. Mã chỉ dùng được một lần và hết hạn sau vài phút.</p>
+<script>
+  const q = new URLSearchParams(location.search);
+  const code = q.get("code");
+  document.getElementById("msg").textContent = code
+    ? "Đã nhận mã từ TikTok:"
+    : "Không có mã. TikTok báo: " + (q.get("error_description") || q.get("error") || "chưa đăng nhập");
+  document.getElementById("code").value = code || "";
+  document.getElementById("copy").onclick = () => navigator.clipboard.writeText(code || "");
+</script>
+</body></html>

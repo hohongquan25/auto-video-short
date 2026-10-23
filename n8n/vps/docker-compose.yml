@@ -1,0 +1,40 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
+    restart: always
+    environment:
+      - N8N_HOST=${N8N_DOMAIN}
+      - N8N_PROTOCOL=https
+      - N8N_PORT=5678
+      - WEBHOOK_URL=https://${N8N_DOMAIN}/
+      - N8N_EDITOR_BASE_URL=https://${N8N_DOMAIN}/
+      - N8N_PROXY_HOPS=1
+      - GENERIC_TIMEZONE=Asia/Ho_Chi_Minh
+      - TZ=Asia/Ho_Chi_Minh
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      # Xoá lịch sử chạy cũ hơn 14 ngày để ổ đĩa không đầy
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+    volumes:
+      - n8n_data:/home/node/.n8n
+    # Không mở cổng ra ngoài: chỉ Caddy (HTTPS) gọi vào
+    expose:
+      - "5678"
+
+  caddy:
+    image: caddy:2
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - N8N_DOMAIN=${N8N_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  n8n_data:
+  caddy_data:
+  caddy_config:

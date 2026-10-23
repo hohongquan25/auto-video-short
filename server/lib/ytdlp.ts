@@ -175,13 +175,26 @@ const RETRY_DELAYS_MS = [5_000, 15_000, 30_000];
  * Network errors are retried a few times; yt-dlp keeps a .part file, so each
  * attempt resumes where the previous one stopped.
  */
-export async function downloadAudio(
+export function downloadAudio(
   url: string, dir: string, onProgress: (p: DownloadProgress) => void, signal: AbortSignal, onRetry?: RetryHandler,
+): Promise<string> {
+  return download(url, dir, ["-f", "bestaudio/best"], onProgress, signal, onRetry);
+}
+
+/** Like downloadAudio, but the picture too: the best video up to 1080p with its sound, as one MP4. */
+export function downloadVideo(
+  url: string, dir: string, onProgress: (p: DownloadProgress) => void, signal: AbortSignal, onRetry?: RetryHandler,
+): Promise<string> {
+  return download(url, dir, ["-f", "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b", "--merge-output-format", "mp4"], onProgress, signal, onRetry);
+}
+
+async function download(
+  url: string, dir: string, formatArgs: string[], onProgress: (p: DownloadProgress) => void, signal: AbortSignal, onRetry?: RetryHandler,
 ): Promise<string> {
   url = normalizeUrl(url);
   for (let attempt = 0; ; attempt++) {
     try {
-      return await downloadOnce(url, dir, onProgress, signal);
+      return await downloadOnce(url, dir, formatArgs, onProgress, signal);
     } catch (err) {
       if (signal.aborted || attempt >= RETRY_DELAYS_MS.length || !isTransientError(err)) throw err;
       if (/416|range not satisfiable/i.test((err as Error).message)) removePartialDownloads(dir);
@@ -192,12 +205,12 @@ export async function downloadAudio(
 }
 
 async function downloadOnce(
-  url: string, dir: string, onProgress: (p: DownloadProgress) => void, signal: AbortSignal,
+  url: string, dir: string, formatArgs: string[], onProgress: (p: DownloadProgress) => void, signal: AbortSignal,
 ): Promise<string> {
   let file = null as string | null;
   try {
     await ytdlp([
-      "-f", "bestaudio/best",
+      ...formatArgs,
       "-o", join(dir, "source.%(ext)s"),
       "--no-mtime",
       "--quiet", "--progress", "--newline",
@@ -222,6 +235,59 @@ async function downloadOnce(
   }
   if (!file) throw new Error("yt-dlp không báo file đã tải");
   return basename(file);
+}
+
+/** The caption tracks a link offers, as yt-dlp lists them: written by people, and made by the site from the speech. */
+export interface CaptionTracks {
+  subtitles?: Record<string, unknown> | null;
+  automatic_captions?: Record<string, unknown> | null;
+  language?: string | null;
+}
+
+const baseLanguage = (key: string) => key.split("-")[0].toLowerCase();
+
+/**
+ * The track to read a video's words from, or null: one written by people in
+ * `language` (else the video's own language, else the first one: any of them
+ * tells what the video says), then the site's automatic captions of the
+ * original speech. The site's automatic translations into other languages
+ * are never taken. Exported for tests.
+ */
+export function pickCaptionTrack(info: CaptionTracks, language: string): { key: string; auto: boolean } | null {
+  const want = language || (info.language ? baseLanguage(info.language) : "");
+  const written = Object.keys(info.subtitles ?? {}).filter((k) => k !== "live_chat");
+  const mine = written.find((k) => want && baseLanguage(k) === want) ?? written[0];
+  if (mine) return { key: mine, auto: false };
+  const auto = Object.keys(info.automatic_captions ?? {});
+  // YouTube marks the captions of the speech itself "-orig"; plain codes are translations of it.
+  const original = auto.find((k) => k.endsWith("-orig")) ?? auto.find((k) => want && k === want);
+  return original ? { key: original, auto: true } : null;
+}
+
+/**
+ * Save the captions of a link's video into `dir` as captions.<lang>.vtt (or
+ * .srt), picked by pickCaptionTrack. Returns null when it has none to read.
+ */
+export async function downloadCaptions(
+  url: string, dir: string, language: string, signal: AbortSignal,
+): Promise<{ file: string; language: string; auto: boolean } | null> {
+  url = normalizeUrl(url);
+  try {
+    const { stdout } = await ytdlp(["-J", "--skip-download", ...target(url)], { signal });
+    const track = pickCaptionTrack(JSON.parse(stdout) as CaptionTracks, language);
+    if (!track) return null;
+    await ytdlp([
+      "--skip-download", track.auto ? "--write-auto-subs" : "--write-subs",
+      "--sub-langs", `^${track.key}$`, "--sub-format", "vtt/srt/best",
+      "-o", join(dir, "captions.%(ext)s"),
+      ...target(url),
+    ], { signal });
+    const file = readdirSync(dir).find((n) => n.startsWith("captions.") && /\.(vtt|srt)$/i.test(n));
+    return file ? { file, language: baseLanguage(track.key), auto: track.auto } : null;
+  } catch (err) {
+    if (signal.aborted) throw err;
+    throw explain(err);
+  }
 }
 
 export async function ytdlpVersion(): Promise<string> {
