@@ -135,6 +135,20 @@ export interface PublishKit {
   partHooks: string[];
   /** Only when YouTube is one of the formats. */
   youtube: { title: string; description: string; tags: string[] } | null;
+  /** The story's number tag, e.g. "#gactro12", in the name of its whole-story TikTok and YouTube videos; null when not numbered. */
+  seriesTag?: string | null;
+  /** The channel name (from the brand settings) ending the name of whole-story videos; null when there is none. */
+  channel?: string | null;
+}
+
+/**
+ * Numbering of whole-story videos: the tag (without "#"), the number the next
+ * story gets, and when numbering began, as only stories created since get one.
+ */
+export interface Numbering {
+  tag: string;
+  next: number;
+  since: string;
 }
 
 /** What to fill in when posting one video. */
@@ -148,23 +162,53 @@ export interface PostSuggestion {
 /** TikTok takes at most this many hashtags in a post. */
 export const TIKTOK_HASHTAGS = 5;
 
+/** The hashtags of one video's post: all of them on YouTube; on TikTok five in all, a whole-story video's number tag counting as one. */
+export function postHashtags(kit: PublishKit, format: VideoFormat, part: { index: number; total: number } | null): string[] {
+  if (format === "youtube") return kit.hashtags;
+  return kit.hashtags.slice(0, !part && kit.seriesTag ? TIKTOK_HASHTAGS - 1 : TIKTOK_HASHTAGS);
+}
+
+/** A kit without the AI's short name (written before it was asked for) takes it from the best title. */
+const nameOf = (kit: PublishKit) => kit.storyName || storyNameFromTitle(kit.titles[0] ?? "") || (kit.titles[0] ?? "");
+
+/** YouTube takes titles of at most this many characters. */
+const YOUTUBE_TITLE_CHARS = 100;
+
+/**
+ * The name of a whole-story video on TikTok and YouTube alike: "Lời khai của
+ * kẻ mù (Truyện Full) #gactro1 | Gác trọ Audio". A name too long for a
+ * YouTube title is cut after a whole word, so the number and the channel stay.
+ */
+export function fullVideoName(kit: PublishKit): string {
+  const tail = " (Truyện Full)" + (kit.seriesTag ? ` ${kit.seriesTag}` : "") + (kit.channel ? ` | ${kit.channel}` : "");
+  const name = nameOf(kit);
+  const room = YOUTUBE_TITLE_CHARS - tail.length;
+  return (name.length <= room ? name : `${name.slice(0, room - 1).replace(/\s+\S*$/, "")}…`) + tail;
+}
+
 /**
  * The post for one video of `format`; `part` is null for a video holding the
  * whole story. Other than YouTube's own texts, a post is just the story's
- * short name and the hashtags TikTok takes, without a description.
+ * short name and the hashtags TikTok takes, without a description. A
+ * whole-story video is named by fullVideoName on both platforms.
  */
 export function postFor(kit: PublishKit, format: VideoFormat, part: { index: number; total: number } | null): PostSuggestion {
   const suffix = part ? ` | Phần ${part.index}/${part.total}` : "";
-  const best = kit.titles[0] ?? "";
   if (format === "youtube") {
-    if (kit.youtube) return { title: kit.youtube.title + suffix, description: kit.youtube.description, tags: kit.youtube.tags };
+    if (kit.youtube) return { title: part ? kit.youtube.title + suffix : fullVideoName(kit), description: kit.youtube.description, tags: kit.youtube.tags };
     // Without the AI's YouTube texts a YouTube video keeps a full description: title, teaser or caption, every hashtag.
     const hook = (part && kit.partHooks[part.index - 1]) || kit.caption;
-    return { title: null, description: [best + (part ? suffix : " (trọn bộ)"), hook, kit.hashtags.join(" ")].filter(Boolean).join("\n\n"), tags: [] };
+    const title = part ? (kit.titles[0] ?? "") + suffix : fullVideoName(kit);
+    return { title: null, description: [title, hook, kit.hashtags.join(" ")].filter(Boolean).join("\n\n"), tags: [] };
   }
-  // A kit without the AI's short name (written before it was asked for) takes it from the best title.
-  const name = (kit.storyName || storyNameFromTitle(best) || best) + (part ? suffix : " (trọn bộ)");
-  return { title: null, description: [name, kit.hashtags.slice(0, TIKTOK_HASHTAGS).join(" ")].filter(Boolean).join("\n\n"), tags: [] };
+  const name = part ? nameOf(kit) + suffix : fullVideoName(kit);
+  return { title: null, description: [name, postHashtags(kit, format, part).join(" ")].filter(Boolean).join("\n\n"), tags: [] };
+}
+
+/** The number tag the next story gets, or null when numbering is off or the job is older than numbering. */
+export function nextSeriesTag(numbering: Numbering, job: Pick<Job, "createdAt">): string | null {
+  if (!numbering.tag || job.createdAt < numbering.since) return null;
+  return `#${numbering.tag}${numbering.next}`;
 }
 
 /** "Ba Tiếng Gõ Cửa!" → "ba_tieng_go_cua": no marks, lowercase, words joined by "_". */
@@ -275,6 +319,8 @@ export interface Job {
   drive: DriveUpload | null;
   /** Everything a summary job knows and makes; null for story jobs, whose `settings` it replaces. */
   summary: SummaryJob | null;
+  /** The story's number tag, e.g. "#gactro12", given once when its videos are first ready; null when not numbered. */
+  seriesTag: string | null;
 }
 
 /** Languages offered for what a video says, its summary and its subtitles; Whisper and the AIs know many more. */

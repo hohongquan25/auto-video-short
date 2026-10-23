@@ -7,8 +7,8 @@ import { z } from "zod";
 import { config, paths } from "./config.js";
 import {
   deleteJob, ensureDataDirs, getBackground, getBrand, getStyle, isValidId, jobDir, listBackgrounds,
-  getSavedDefaults, getSavedSummaryDefaults, listJobs, listStyles, newId, saveBackgrounds, saveBrand, saveDefaults, saveJob, saveStyles,
-  saveSummaryDefaults,
+  getNumbering, getSavedDefaults, getSavedSummaryDefaults, listJobs, listStyles, newId, saveBackgrounds, saveBrand, saveDefaults, saveJob,
+  saveNumbering, saveStyles, saveSummaryDefaults,
 } from "./store.js";
 import { cancel, enqueue, isBusy, liveJob, notify, resumeOnStartup } from "./queue.js";
 import { jobLinks } from "./webhook.js";
@@ -26,6 +26,8 @@ import {
 } from "./types.js";
 
 ensureDataDirs();
+// Numbering starts the first time the server runs with it, so only stories created from then on are numbered.
+getNumbering();
 
 const MEDIA_EXT = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".mp4", ".mkv", ".mov", ".webm", ".avi"]);
 const VIDEO_EXT = new Set([".mp4", ".mkv", ".mov", ".webm", ".avi"]);
@@ -302,7 +304,7 @@ app.post("/api/jobs", upload.single("media"), async (req, res) => {
       id, kind: "story", title: title.slice(0, 200), sourceFile, sourceDurationSec: sourceInfo?.durationSec ?? null,
       sourceUrl, sourceInfo, sourceTopic, createdAt: now, updatedAt: now,
       status: "queued", step: null, progress: 0, detail: null, timings: {}, error: null,
-      settings, reviewApproved: false, outputs: [], publish: null, log: [], callbackUrl, drive: null, summary: null,
+      settings, reviewApproved: false, outputs: [], publish: null, log: [], callbackUrl, drive: null, summary: null, seriesTag: null,
     };
     appendLog(job, sourceUrl ? `Đã tạo job từ link ${sourceInfo!.platform}, đang chờ xử lý`
       : topic ? "Đã tạo job AI viết truyện theo chủ đề, đang chờ xử lý"
@@ -378,7 +380,7 @@ app.post("/api/summaries", upload.fields([{ name: "media", maxCount: 1 }, { name
       // Story settings a summary job never reads, so every job keeps one shape.
       settings: { ...BUILTIN_DEFAULTS, styleId: "", backgroundIds: [], aiProvider: settings.aiProvider, formats: [settings.format], fit: settings.fit },
       reviewApproved: false, outputs: [], publish: null, log: [], callbackUrl: null, drive: null,
-      summary: { settings, transcriptFrom: null, language: null, result: null },
+      summary: { settings, transcriptFrom: null, language: null, result: null }, seriesTag: null,
     };
     appendLog(job, sourceUrl ? `Đã tạo job tóm tắt từ link ${sourceInfo!.platform}, đang chờ xử lý` : "Đã tạo job tóm tắt, đang chờ xử lý");
     saveJob(job);
@@ -557,6 +559,25 @@ app.put("/api/summary-defaults", async (req, res) => {
   await validateOlvrocVoice(defaults.voice);
   saveSummaryDefaults(defaults);
   res.json(defaults);
+});
+
+// ── Numbering of whole-story videos ─────────────────────────────────────────
+
+app.get("/api/numbering", (_req, res) => {
+  const { tag, next } = getNumbering();
+  res.json({ tag, next });
+});
+
+app.put("/api/numbering", (req, res) => {
+  const body = z.object({
+    tag: z.string(),
+    next: z.number().int("Số kế tiếp phải là số nguyên").min(1, "Số kế tiếp ít nhất là 1").max(1_000_000),
+  }).parse(req.body);
+  const tag = body.tag.trim().replace(/^#+/, "");
+  if (!/^[\p{L}\p{N}_]{0,30}$/u.test(tag)) throw new HttpError(400, "Tên thẻ chỉ gồm chữ, số và dấu gạch dưới, không có khoảng trắng");
+  const { next } = body;
+  saveNumbering({ ...getNumbering(), tag, next });
+  res.json({ tag, next });
 });
 
 app.get("/api/styles", (_req, res) => {

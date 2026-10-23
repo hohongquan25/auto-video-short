@@ -86,7 +86,7 @@ describe("sheet rows", () => {
     // Not uploaded yet: no Drive links.
     expect(row(1)).toMatchObject({ video_file_id: "", video_url: "" });
     expect(row(2)).toMatchObject({
-      format: "youtube", kind: "full", part: "", post_title: "Ngôi trường bên sông | Truyện ma", post_description: "Mô tả", tags: "truyện ma, kể chuyện",
+      format: "youtube", kind: "full", part: "", post_title: "Cô giáo và ngôi trường bên sông (Truyện Full)", post_description: "Mô tả", tags: "truyện ma, kể chuyện",
     });
     expect(PENDING).toBe("pending");
   });
@@ -99,6 +99,25 @@ describe("sheet rows", () => {
       "#truyenma #truyenmamientay #kechuyen #truyenaudio #cogiaotre",
       "#truyenma #truyenmamientay #kechuyen #truyenaudio #cogiaotre #ngoitruongbensong",
     ]);
+  });
+
+  it("names a numbered story's whole-story videos with the tag after the name, the tag counting as one of TikTok's five hashtags", () => {
+    const numbered = {
+      ...job, publish: { ...kit, storyName: "Ngôi trường bên sông", seriesTag: "#gactro7", channel: "Gác trọ Audio" },
+      outputs: [
+        { format: "tiktok", parts: [{ index: 1, ...video("tiktok/part-01.mp4") }], fullVideo: video("tiktok/full.mp4") },
+        { format: "youtube", parts: [], fullVideo: video("youtube/full.mp4") },
+      ],
+    } as unknown as Job;
+    const rows = sheetRows(numbered, drive, "2026-10-15T10:00:00.000Z").map((r) => Object.fromEntries(r.map((v, c) => [SHEET_HEADER[c], v])));
+    // A part keeps its name and five hashtags.
+    expect(rows[0].post_description).toBe("Ngôi trường bên sông | Phần 1/1\n\n#truyenma #truyenmamientay #kechuyen #truyenaudio #cogiaotre");
+    expect(rows[1]).toMatchObject({
+      kind: "full",
+      post_description: "Ngôi trường bên sông (Truyện Full) #gactro7 | Gác trọ Audio\n\n#truyenma #truyenmamientay #kechuyen #truyenaudio",
+      hashtags: "#truyenma #truyenmamientay #kechuyen #truyenaudio",
+    });
+    expect(rows[2]).toMatchObject({ format: "youtube", post_title: "Ngôi trường bên sông (Truyện Full) #gactro7 | Gác trọ Audio" });
   });
 });
 

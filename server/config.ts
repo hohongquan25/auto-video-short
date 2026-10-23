@@ -117,6 +117,7 @@ export const paths = {
   brandFile: join(config.dataDir, "brand.json"),
   defaultsFile: join(config.dataDir, "defaults.json"),
   summaryDefaultsFile: join(config.dataDir, "summary-defaults.json"),
+  numberingFile: join(config.dataDir, "numbering.json"),
   /** The connected Google account's refresh token and the folder and sheet made for it. Secret. */
   googleFile: join(config.dataDir, "google.json"),
 };

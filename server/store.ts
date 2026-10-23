@@ -2,7 +2,10 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, readdir
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { paths } from "./config.js";
-import { SUMMARY_DEFAULTS, type Background, type Brand, type DefaultSettings, type FullVideo, type Job, type JobPart, type Style, type SummarySettings, type VideoFormat } from "./types.js";
+import {
+  SUMMARY_DEFAULTS, nextSeriesTag, type Background, type Brand, type DefaultSettings, type FullVideo, type Job, type JobPart, type Numbering, type Style,
+  type SummarySettings, type VideoFormat,
+} from "./types.js";
 
 const ID_RE = /^[a-z0-9-]{4,64}$/;
 
@@ -111,6 +114,7 @@ function migrateJob(job: Job): Job {
   job.drive ??= null;
   job.kind ??= "story";
   job.summary ??= null;
+  job.seriesTag ??= null;
   // Summaries from before narration kept the video's own sound, and their subtitles were "none", "source" or a language.
   if (job.summary) {
     const s = job.summary.settings as SummarySettings & { subtitles: boolean | string; summaryLanguage?: string };
@@ -203,6 +207,29 @@ export function getSavedSummaryDefaults(): SummarySettings | null {
 
 export function saveSummaryDefaults(defaults: SummarySettings): void {
   writeJson(paths.summaryDefaultsFile, defaults);
+}
+
+// ── Numbering of whole-story videos ─────────────────────────────────────────
+
+/** The numbering in use. The first read starts it ("#gactro1"), so only stories created from then on are numbered. */
+export function getNumbering(): Numbering {
+  const saved = readJson<Numbering | null>(paths.numberingFile, null);
+  if (saved) return saved;
+  const fresh: Numbering = { tag: "gactro", next: 1, since: new Date().toISOString() };
+  writeJson(paths.numberingFile, fresh);
+  return fresh;
+}
+
+export function saveNumbering(numbering: Numbering): void {
+  writeJson(paths.numberingFile, numbering);
+}
+
+/** Give `job` the next number tag when it is due one, and move the count on; jobs run one at a time, so no two take the same. */
+export function takeSeriesTag(job: Pick<Job, "createdAt">): string | null {
+  const numbering = getNumbering();
+  const tag = nextSeriesTag(numbering, job);
+  if (tag) saveNumbering({ ...numbering, next: numbering.next + 1 });
+  return tag;
 }
 
 // ── Google account ──────────────────────────────────────────────────────────

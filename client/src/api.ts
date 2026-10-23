@@ -95,6 +95,8 @@ export const api = {
   saveDefaults: (defaults: DefaultSettings) => request<DefaultSettings>("PUT", "/api/defaults", defaults),
   summaryDefaults: () => request<SummarySettings>("GET", "/api/summary-defaults"),
   saveSummaryDefaults: (defaults: SummarySettings) => request<SummarySettings>("PUT", "/api/summary-defaults", defaults),
+  numbering: () => request<{ tag: string; next: number }>("GET", "/api/numbering"),
+  saveNumbering: (n: { tag: string; next: number }) => request<{ tag: string; next: number }>("PUT", "/api/numbering", n),
 
   brand: () => request<Brand>("GET", "/api/brand"),
   saveBrand: (brand: Brand) => request<Brand>("PUT", "/api/brand", brand),
