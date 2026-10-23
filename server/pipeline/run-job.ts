@@ -37,6 +37,8 @@ export const artifacts = (id: string) => {
     lines: join(dir, "lines.json"),
     /** The AI's summary and chosen passages. */
     summaryPlan: join(dir, "summary.json"),
+    /** The narration of each passage, read aloud. */
+    narrationDir: join(dir, "narration"),
     clipsDir: join(dir, "clips"),
     summaryVideo: join(dir, "summary.mp4"),
   };
@@ -95,6 +97,7 @@ export function resetFromStep(job: Job, fromStep: Step): void {
     rmSync(a.summaryPlan, { force: true });
     summary.result = null;
   }
+  if (summary && at("narrate")) rmSync(a.narrationDir, { recursive: true, force: true });
   if (summary && at("cut")) {
     rmSync(a.clipsDir, { recursive: true, force: true });
     rmSync(a.summaryVideo, { force: true });

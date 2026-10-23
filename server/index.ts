@@ -7,7 +7,8 @@ import { z } from "zod";
 import { config, paths } from "./config.js";
 import {
   deleteJob, ensureDataDirs, getBackground, getBrand, getStyle, isValidId, jobDir, listBackgrounds,
-  getSavedDefaults, listJobs, listStyles, newId, saveBackgrounds, saveBrand, saveDefaults, saveJob, saveStyles,
+  getSavedDefaults, getSavedSummaryDefaults, listJobs, listStyles, newId, saveBackgrounds, saveBrand, saveDefaults, saveJob, saveStyles,
+  saveSummaryDefaults,
 } from "./store.js";
 import { cancel, enqueue, isBusy, liveJob, notify, resumeOnStartup } from "./queue.js";
 import { jobLinks } from "./webhook.js";
@@ -21,7 +22,7 @@ import { listOlvrocVoices, olvrocStatus, olvrocSynthesize } from "./lib/olvroc.j
 import { probeUrl, ytdlpVersion } from "./lib/ytdlp.js";
 import { finishOauth, googleConfigured, googleStatus, oauthUrl } from "./lib/google.js";
 import {
-  BACKGROUND_SPEEDS, BUILTIN_DEFAULTS, EDGE_VOICES, FALLBACK_VOICE, STEPS, STEP_LABELS, OLVROC_PREFIX, SUMMARY_DEFAULTS, voiceProvider, type Background, type DefaultSettings, type Job, type SystemStatus, type Voice,
+  BACKGROUND_SPEEDS, BUILTIN_DEFAULTS, EDGE_VOICES, FALLBACK_VOICE, STEPS, STEP_LABELS, OLVROC_PREFIX, SUMMARY_DEFAULTS, storyNameFromTitle, voiceProvider, type Background, type DefaultSettings, type Job, type SummarySettings, type SystemStatus, type Voice,
 } from "./types.js";
 
 ensureDataDirs();
@@ -161,13 +162,15 @@ app.get("/api/voices/preview", async (req, res) => {
 
 const formatSchema = z.enum(["original", "tiktok", "youtube"]);
 
+const voiceSchema = z.string().refine(
+  (id) => EDGE_VOICES.some((v) => v.id === id) || olvrocVoiceId.test(id),
+  "Giọng đọc không hợp lệ",
+);
+
 const settingsObject = z.object({
   styleId: z.string().min(1),
   aiProvider: z.enum(["claude", "gemini"]).default("claude"),
-  voice: z.string().refine(
-    (id) => EDGE_VOICES.some((v) => v.id === id) || olvrocVoiceId.test(id),
-    "Giọng đọc không hợp lệ",
-  ),
+  voice: voiceSchema,
   rate: rateSchema,
   backgroundIds: z.array(z.string().min(1)).min(1, "Chọn ít nhất một video nền").transform((ids) => [...new Set(ids)]),
   reviewBeforeTts: z.boolean(),
@@ -275,7 +278,10 @@ app.post("/api/jobs", upload.single("media"), async (req, res) => {
     if (file && !MEDIA_EXT.has(ext)) throw new HttpError(400, `Định dạng ${ext || "không rõ"} không được hỗ trợ`);
 
     const rawSettings = typeof req.body.settings === "string" ? JSON.parse(req.body.settings || "{}") : (req.body.settings ?? {});
-    const settings = settingsSchema.parse(rawSettings);
+    // Settings a caller leaves out come from the saved defaults, as for Tạo nhanh; an older caller's one "format" replaces their list.
+    const isObject = rawSettings !== null && typeof rawSettings === "object" && !Array.isArray(rawSettings);
+    const legacyFormat = isObject && "format" in rawSettings && !("formats" in rawSettings) ? { formats: [rawSettings.format] } : {};
+    const settings = settingsSchema.parse(isObject ? { ...(await resolveDefaults()), ...legacyFormat, ...rawSettings } : rawSettings);
     validateSettingsRefs(settings);
     await validateOlvrocVoice(settings.voice);
     const callbackUrl = req.body.callbackUrl
@@ -316,11 +322,13 @@ const languageSchema = z.string().regex(/^[a-z]{2,3}$/, "Mã ngôn ngữ không 
 
 const summarySettingsSchema = z.object({
   aiProvider: z.enum(["claude", "gemini"]).default(SUMMARY_DEFAULTS.aiProvider),
-  targetSec: z.number().min(30, "Bản rút gọn dài ít nhất 30 giây").max(4 * 3600),
+  targetSec: z.number().min(30, "Bản rút gọn dài ít nhất 30 giây").max(4 * 3600).nullable().default(SUMMARY_DEFAULTS.targetSec),
+  focus: z.string().trim().max(2000, "Trọng tâm tóm tắt dài tối đa 2000 ký tự").default(SUMMARY_DEFAULTS.focus),
   language: z.union([z.literal(""), languageSchema]).default(""),
   useCaptions: z.boolean().default(true),
-  subtitles: z.union([z.enum(["none", "source"]), languageSchema]).default("none"),
-  summaryLanguage: languageSchema.default("vi"),
+  voice: voiceSchema.default(SUMMARY_DEFAULTS.voice),
+  rate: rateSchema.default(SUMMARY_DEFAULTS.rate),
+  subtitles: z.boolean().default(SUMMARY_DEFAULTS.subtitles),
   format: formatSchema.default("original"),
   fit: z.enum(["blur", "crop"]).default("blur"),
 });
@@ -345,10 +353,14 @@ app.post("/api/summaries", upload.fields([{ name: "media", maxCount: 1 }, { name
     if (captions && !CAPTION_EXT.has(captionsExt)) throw new HttpError(400, "Phụ đề cần là file .srt hoặc .vtt");
 
     const rawSettings = typeof req.body.settings === "string" ? JSON.parse(req.body.settings || "{}") : (req.body.settings ?? {});
-    const settings = summarySettingsSchema.parse(rawSettings);
+    // Settings a caller leaves out come from the saved summary defaults.
+    const settings = summarySettingsSchema.parse({ ...(await resolveSummaryDefaults()), ...rawSettings });
+    await validateOlvrocVoice(settings.voice);
     const sourceInfo = sourceUrl ? await probeOrReject(sourceUrl) : null;
-    if (sourceInfo?.durationSec && settings.targetSec >= sourceInfo.durationSec * 0.95) {
-      throw new HttpError(400, `Video dài ${formatDuration(sourceInfo.durationSec)}, hãy chọn bản rút gọn ngắn hơn`);
+    if (sourceInfo?.durationSec && settings.targetSec !== null && settings.targetSec >= sourceInfo.durationSec * 0.95) {
+      // A default length too long for this video lets the AI choose instead; one the caller asked for is refused.
+      if (rawSettings?.targetSec === undefined) settings.targetSec = null;
+      else throw new HttpError(400, `Video dài ${formatDuration(sourceInfo.durationSec)}, hãy chọn bản rút gọn ngắn hơn`);
     }
 
     const id = newId();
@@ -408,6 +420,7 @@ app.post("/api/jobs/:id/rerun", async (req, res) => {
   }).parse(req.body);
   // Awaited before the idle check so no other request can start the job in between.
   if (body.settings) await validateOlvrocVoice(body.settings.voice);
+  if (body.summary) await validateOlvrocVoice(body.summary.voice);
   const job = loadJob(req.params.id);
   assertIdle(job);
 
@@ -452,11 +465,12 @@ app.patch("/api/jobs/:id", (req, res) => {
   if (title !== job.title) {
     appendLog(job, `Đổi tên "${job.title}" thành "${title}"`);
     job.title = title;
-    // The name the user chose now names the files, not the one the AI gave the story.
-    if (job.publish?.storyName) {
-      job.publish.storyName = null;
+    // The name the user chose now names the files and the TikTok posts, not the one the AI gave the story.
+    if (job.publish) {
+      const storyName = storyNameFromTitle(title) || title;
+      job.publish.storyName = storyName;
       const kitFile = artifacts(job.id).publishKit;
-      if (existsSync(kitFile)) writeFileSync(kitFile, JSON.stringify({ ...JSON.parse(readFileSync(kitFile, "utf8")), storyName: null }, null, 2));
+      if (existsSync(kitFile)) writeFileSync(kitFile, JSON.stringify({ ...JSON.parse(readFileSync(kitFile, "utf8")), storyName }, null, 2));
     }
     saveJob(job);
   }
@@ -523,6 +537,25 @@ app.put("/api/defaults", async (req, res) => {
   if (!getStyle(defaults.styleId)) throw new HttpError(400, "Phong cách không tồn tại");
   await validateOlvrocVoice(defaults.voice);
   saveDefaults(defaults);
+  res.json(defaults);
+});
+
+/** The saved summary defaults, or the built-in ones read by the voice new story jobs start with. */
+async function resolveSummaryDefaults(): Promise<SummarySettings> {
+  const saved = getSavedSummaryDefaults();
+  if (saved) return saved;
+  const { voice, rate } = await resolveDefaults();
+  return { ...SUMMARY_DEFAULTS, voice, rate };
+}
+
+app.get("/api/summary-defaults", async (_req, res) => {
+  res.json(await resolveSummaryDefaults());
+});
+
+app.put("/api/summary-defaults", async (req, res) => {
+  const defaults = summarySettingsSchema.parse(req.body);
+  await validateOlvrocVoice(defaults.voice);
+  saveSummaryDefaults(defaults);
   res.json(defaults);
 });
 

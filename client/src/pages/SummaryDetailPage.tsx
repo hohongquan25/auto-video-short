@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CircleAlert, Copy, Download, Link2, LoaderCircle, RotateCcw, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, CircleAlert, Copy, Download, Lightbulb, Link2, LoaderCircle, RotateCcw, Square, Trash2 } from "lucide-react";
 import { api, jobFileUrl, type Job, type JobDetail, type Meta, type Step, type SummaryResult, type SummarySettings } from "../api";
 import { Pipeline, StatusBadge } from "../components/JobStatus";
 import { JobTitle } from "../components/JobTitle";
@@ -9,7 +9,8 @@ import { StatusPanel } from "../components/StatusPanel";
 import { SummarySettingsForm, summaryProblems } from "../components/SummarySettings";
 import { copyText, errorMessage, useToast } from "../components/Toast";
 import {
-  AI_PROVIDER_LABELS, STEP_LABELS, clock, fileSlug, formatBytes, formatDate, formatDuration, languageLabel, storyNameFromTitle,
+  AI_PROVIDER_LABELS, SHORT_OF_SUGGESTED, STEP_LABELS, clock, fileSlug, focusLabel, formatBytes, formatDate, formatDuration, languageLabel,
+  storyNameFromTitle,
 } from "../format";
 import { deleteQuestion, isActive, summaryStepForChange, useNow } from "../jobState";
 import { useLibrary } from "../useLibrary";
@@ -17,23 +18,52 @@ import { usePolling } from "../usePolling";
 
 type Tab = "result" | "transcript" | "log" | "settings";
 
-const TAB_FOR_STEP: Partial<Record<Step, Tab>> = { captions: "transcript", transcribe: "transcript", summarize: "result", cut: "result" };
+const TAB_FOR_STEP: Partial<Record<Step, Tab>> = { captions: "transcript", transcribe: "transcript", summarize: "result", narrate: "result", cut: "result" };
 
 const downloadName = (job: Job) => `${fileSlug(storyNameFromTitle(job.title)) || "video"}_rut_gon.mp4`;
 
-function ResultTab({ job, result }: { job: Job; result: SummaryResult | null }) {
+/** How long the AI judged the summary must be to tell everything, and a redo at that length when the one chosen falls well short. */
+function LengthAdvice({ job, result, targetSec, busy, onRetarget }: {
+  job: Job; result: SummaryResult; targetSec: number | null; busy: boolean; onRetarget: (sec: number) => void;
+}) {
+  const suggested = result.suggested;
+  if (!suggested) return null;
+  const short = targetSec !== null && targetSec < suggested.sec * SHORT_OF_SUGGESTED;
+  return (
+    <div className={`alert ${short ? "warn" : "info"}`}>
+      <Lightbulb size={16} />
+      <div className="grow">
+        {targetSec === null ? "AI chọn độ dài" : "AI ước tính cần khoảng"} <b>{formatDuration(suggested.sec)}</b> để kể đủ nội dung
+        {suggested.reason ? `: ${suggested.reason}` : "."}
+        {short && targetSec !== null && (
+          <div className="row length-advice">
+            <span>Độ dài bạn chọn ({formatDuration(targetSec)}) ngắn hơn nhiều nên có thể thiếu ý.</span>
+            <button className="small" disabled={busy || isActive(job)} onClick={() => onRetarget(suggested.sec)}>
+              <RotateCcw size={14} /> Làm lại với {formatDuration(suggested.sec)}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ResultTab({ job, result, targetSec, busy, onRetarget }: {
+  job: Job; result: SummaryResult | null; targetSec: number | null; busy: boolean; onRetarget: (sec: number) => void;
+}) {
   const toast = useToast();
   const player = useRef<HTMLVideoElement>(null);
   if (!result) return <div className="empty">{isActive(job) ? "Bản tóm tắt sẽ hiện ở đây khi AI đọc xong lời thoại." : "Chưa có bản tóm tắt."}</div>;
-  // Where each kept passage starts in the cut video.
+  // Where each kept passage starts in the cut video, where it lasts as long as its narration.
   const starts: number[] = [];
-  result.clips.reduce((at, c) => (starts.push(at), at + c.endSec - c.startSec), 0);
+  result.clips.reduce((at, c) => (starts.push(at), at + (c.outSec ?? c.endSec - c.startSec)), 0);
   const seek = (sec: number) => {
     if (!player.current) return;
     player.current.currentTime = sec;
     void player.current.play();
   };
   const fullText = [result.title, result.text, ...result.keyPoints.map((p) => `- ${p}`)].filter(Boolean).join("\n\n");
+  const narration = result.clips.map((c) => c.narration).join("\n\n");
   return (
     <div className="summary-result">
       {result.file ? (
@@ -49,6 +79,7 @@ function ResultTab({ job, result }: { job: Job; result: SummaryResult | null }) 
       ) : (
         <div className="empty">{isActive(job) ? "Video rút gọn sẽ có khi cắt ghép xong." : "Chưa có video rút gọn."}</div>
       )}
+      <LengthAdvice job={job} result={result} targetSec={targetSec} busy={busy} onRetarget={onRetarget} />
 
       <section>
         <div className="editor-toolbar small">
@@ -66,7 +97,11 @@ function ResultTab({ job, result }: { job: Job; result: SummaryResult | null }) 
       </section>
 
       <section>
-        <h3>{result.clips.length} đoạn được giữ</h3>
+        <div className="editor-toolbar small">
+          <b>{result.clips.length} đoạn và lời kể</b>
+          <span className="spacer" />
+          <button className="small" onClick={() => copyText(narration, toast, "lời kể")}><Copy size={14} /> Sao chép lời kể</button>
+        </div>
         <ol className="clip-list">
           {result.clips.map((c, i) => (
             <li key={c.startSec}>
@@ -74,7 +109,7 @@ function ResultTab({ job, result }: { job: Job; result: SummaryResult | null }) 
                 {clock(starts[i])}
               </button>
               <span className="small muted">gốc {clock(c.startSec)}–{clock(c.endSec)}</span>
-              <span>{c.note}</span>
+              <span>{c.narration}</span>
             </li>
           ))}
         </ol>
@@ -164,13 +199,15 @@ export function SummaryDetailPage() {
               </a>
             )}
             {job.sourceDurationSec ? <span>Video gốc {formatDuration(job.sourceDurationSec)}</span> : null}
-            <span>Rút gọn còn {formatDuration(settings.targetSec)}</span>
+            <span>{settings.targetSec === null ? "Độ dài do AI chọn" : `Rút gọn còn ${formatDuration(settings.targetSec)}`}</span>
+            {settings.focus && <span title={settings.focus}>Trọng tâm {focusLabel(settings.focus)}</span>}
             {summary.transcriptFrom && (
               <span>
                 {summary.transcriptFrom === "captions" ? "Từ phụ đề" : "Nhận dạng giọng nói"}
                 {summary.language ? ` · ${languageLabel(summary.language)}` : ""}
               </span>
             )}
+            <span>Giọng kể {meta.voices.find((v) => v.id === settings.voice)?.name ?? settings.voice.replace(/^olvroc:/, "")}</span>
             <span>{AI_PROVIDER_LABELS[settings.aiProvider]}</span>
           </div>
         </div>
@@ -221,7 +258,15 @@ export function SummaryDetailPage() {
           ))}
         </div>
 
-        {currentTab === "result" && <ResultTab job={job} result={result} />}
+        {currentTab === "result" && (
+          <ResultTab
+            job={job} result={result} targetSec={settings.targetSec} busy={busy}
+            onRetarget={(sec) => act(
+              () => api.rerunSummary(job.id, "summarize", { ...settings, targetSec: sec }),
+              `Đã cho làm lại với độ dài ${formatDuration(sec)}`,
+            )}
+          />
+        )}
 
         {currentTab === "transcript" && (
           data.transcript === null ? (

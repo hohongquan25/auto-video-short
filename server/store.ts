@@ -2,7 +2,7 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, readdir
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { paths } from "./config.js";
-import type { Background, Brand, DefaultSettings, FullVideo, Job, JobPart, Style, VideoFormat } from "./types.js";
+import { SUMMARY_DEFAULTS, type Background, type Brand, type DefaultSettings, type FullVideo, type Job, type JobPart, type Style, type SummarySettings, type VideoFormat } from "./types.js";
 
 const ID_RE = /^[a-z0-9-]{4,64}$/;
 
@@ -111,6 +111,15 @@ function migrateJob(job: Job): Job {
   job.drive ??= null;
   job.kind ??= "story";
   job.summary ??= null;
+  // Summaries from before narration kept the video's own sound, and their subtitles were "none", "source" or a language.
+  if (job.summary) {
+    const s = job.summary.settings as SummarySettings & { subtitles: boolean | string; summaryLanguage?: string };
+    if (typeof s.subtitles === "string") s.subtitles = s.subtitles !== "none";
+    s.voice ??= SUMMARY_DEFAULTS.voice;
+    s.rate ??= SUMMARY_DEFAULTS.rate;
+    s.focus ??= SUMMARY_DEFAULTS.focus;
+    delete s.summaryLanguage;
+  }
   return job;
 }
 
@@ -183,6 +192,17 @@ export function getSavedDefaults(): DefaultSettings | null {
 
 export function saveDefaults(defaults: DefaultSettings): void {
   writeJson(paths.defaultsFile, defaults);
+}
+
+/** The summary settings the user saved, or null while the built-in ones apply. */
+export function getSavedSummaryDefaults(): SummarySettings | null {
+  const saved = readJson<Partial<SummarySettings> | null>(paths.summaryDefaultsFile, null);
+  // Settings added since they were saved take their built-in value.
+  return saved && { ...SUMMARY_DEFAULTS, ...saved };
+}
+
+export function saveSummaryDefaults(defaults: SummarySettings): void {
+  writeJson(paths.summaryDefaultsFile, defaults);
 }
 
 // ── Google account ──────────────────────────────────────────────────────────

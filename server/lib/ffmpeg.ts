@@ -250,33 +250,63 @@ export async function extractSubtitleTrack(file: string, index: number, outSrt: 
   await ffmpeg(["-y", "-i", resolve(file), "-map", `0:${index}`, "-c:s", "srt", resolve(outSrt)], { totalSec: null, signal });
 }
 
-/** Sound fades in and out over this at each end of a cut clip, so joins do not click. */
-const CLIP_FADE_SEC = 0.04;
+/** A stretch of a source in its own seconds, played at a speed (above 1 faster). */
+export interface SourceSpan {
+  startSec: number;
+  lengthSec: number;
+  speed: number;
+}
 
 /**
- * Cut `lengthSec` from `startSec` of `source` into its own MP4: framed like
- * the rendered videos, or kept as it is (even-sized) when `frame` is null,
- * with `subtitles` (an .ass file timed from the clip's start) burned in.
- * Clips cut from one source with the same options share one encoding, so
- * concatVideos joins them without re-encoding.
+ * One passage of a narrated summary, `lengthSec` long: `span` of `source`
+ * played from `leadSec` in (the seconds that dissolved in at the end of the
+ * passage before) under `narration`, padded with silence to the length. The
+ * source's own sound is dropped, and footage that runs short holds its last
+ * frame. With `next`, the last `transitionSec` dissolve into the start of
+ * the next passage's footage. The picture is framed like the rendered
+ * videos, or kept as it is (even-sized) when `frame` is null, with
+ * `subtitles` (an .ass file timed from the passage's start) burned in.
+ * Passages made from one source with the same options share one encoding,
+ * so concatVideos joins them without re-encoding.
  */
-export async function cutClip(
-  source: string, startSec: number, lengthSec: number, outFile: string,
-  opts: { frame: OutputFrame | null; subtitles?: string }, p?: FfmpegProgress,
+export async function narratedPassage(
+  source: string,
+  opts: {
+    span: SourceSpan; leadSec: number; lengthSec: number; next: SourceSpan | null; transitionSec: number;
+    narration: string; frame: OutputFrame | null; subtitles?: string;
+  },
+  outFile: string, p?: FfmpegProgress,
 ): Promise<void> {
+  const { span, leadSec, lengthSec, next, transitionSec, frame } = opts;
   const sub = subtitleFilter(opts.subtitles);
-  const video = [
-    opts.frame ? frameFilter(opts.frame) : "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1",
-    `fps=${OUTPUT_FPS}`, "format=yuv420p", sub.filter,
-  ].filter(Boolean).join(",");
-  const fade = Math.min(CLIP_FADE_SEC, lengthSec / 4).toFixed(3);
+  // Input `input` played at its speed and framed, then `sec` of it from `fromSec`.
+  const footage = (input: number, s: SourceSpan, fromSec: number, sec: number, id: string) => [
+    `[${input}:v]setpts=(PTS-STARTPTS)/${s.speed.toFixed(4)}`,
+    frame ? frameFilter(frame, id) : "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1",
+    `fps=${OUTPUT_FPS}`, "format=yuv420p",
+    `tpad=stop_mode=clone:stop_duration=${(fromSec + sec).toFixed(3)}`,
+    `trim=start=${fromSec.toFixed(3)}:duration=${sec.toFixed(3)}`, "setpts=PTS-STARTPTS",
+  ].join(",");
+  const graph = [`${footage(0, span, leadSec, lengthSec, "a")}[a]`];
+  let picture = "[a]";
+  if (next) {
+    graph.push(`${footage(1, next, 0, transitionSec, "b")}[b]`);
+    graph.push(`[a][b]xfade=transition=fade:duration=${transitionSec.toFixed(3)}:offset=${(lengthSec - transitionSec).toFixed(3)}[x]`);
+    picture = "[x]";
+  }
+  graph.push(`${picture}${sub.filter ?? "null"}[v]`, `[${next ? 2 : 1}:a]apad[s]`);
+  const input = (s: SourceSpan, sec: number) => ["-ss", s.startSec.toFixed(3), "-t", sec.toFixed(3), "-i", resolve(source)];
   await ffmpeg([
     "-y",
-    "-ss", startSec.toFixed(3), "-t", lengthSec.toFixed(3), "-i", resolve(source),
-    "-vf", video,
-    "-af", `afade=t=in:d=${fade},afade=t=out:st=${Math.max(0, lengthSec - Number(fade)).toFixed(3)}:d=${fade}`,
+    ...input(span, span.lengthSec),
+    // Only the first moments of the next passage show, in the dissolve.
+    ...(next ? input(next, transitionSec * next.speed + 0.5) : []),
+    "-i", resolve(opts.narration),
+    "-filter_complex", graph.join(";"),
+    "-map", "[v]", "-map", "[s]",
+    "-t", lengthSec.toFixed(3),
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
-    "-c:a", "aac", "-b:a", "160k", "-ar", "44100",
+    "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2",
     "-movflags", "+faststart",
     resolve(outFile),
   ], p, sub.cwd);

@@ -147,7 +147,12 @@ export function ReviewToggle({ value, set }: { value: JobSettings; set: Set }) {
 
 type GenderFilter = "all" | "female" | "male";
 
-export function VoicePicker({ value, set, meta, speechSec }: { value: JobSettings; set: Set; meta: Meta; speechSec?: number | null }) {
+type VoiceSettings = Pick<JobSettings, "voice" | "rate">;
+
+/** Shared by story and summary jobs, which both read with a voice at a speed. */
+export function VoicePicker({ value, set, meta, speechSec }: {
+  value: VoiceSettings; set: (patch: Partial<VoiceSettings>) => void; meta: Meta; speechSec?: number | null;
+}) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState<{ voice: string; loading: boolean } | null>(null);
   const [gender, setGender] = useState<GenderFilter>("all");
@@ -378,7 +383,7 @@ export function BackgroundPicker({ value, set }: { value: JobSettings; set: Set 
   );
 }
 
-export function SubtitleToggle({ value, set }: { value: JobSettings; set: Set }) {
+export function SubtitleToggle({ value, set }: { value: Pick<JobSettings, "subtitles">; set: (patch: Pick<JobSettings, "subtitles">) => void }) {
   return (
     <label className={`switch-card ${value.subtitles ? "on" : ""}`}>
       <Captions size={20} />

@@ -6,7 +6,7 @@ import {
   a1, appendRows, columnLetter, createFolder, driveTargets, ensureTab, readRange, trashFile, uploadFile, writeRanges, type Cell,
 } from "../lib/google.js";
 import {
-  driveFileUrl, driveFolderUrl, postFor, videoFileName, type DriveUpload, type FullVideo, type Job, type VideoFormat,
+  TIKTOK_HASHTAGS, driveFileUrl, driveFolderUrl, postFor, videoFileName, type DriveUpload, type FullVideo, type Job, type VideoFormat,
 } from "../types.js";
 import type { StepReporter } from "./run-job.js";
 
@@ -48,13 +48,15 @@ export function jobVideos(job: Job): JobVideo[] {
 export function sheetRows(job: Job, drive: DriveUpload, uploadedAt: string): Cell[][] {
   return jobVideos(job).map(({ id, format, part, video }) => {
     const post = job.publish ? postFor(job.publish, format, part) : null;
+    // YouTube rows list every hashtag; the others only the few TikTok takes, those ending their post text.
+    const hashtags = format === "youtube" ? job.publish?.hashtags : job.publish?.hashtags.slice(0, TIKTOK_HASHTAGS);
     const file = drive.files[video.file];
     const cover = video.cover ? drive.files[video.cover] : undefined;
     return [
       id, uploadedAt, job.id, job.title, format, part ? "part" : "full", part?.index ?? "", part?.total ?? "",
       Math.round(video.durationSec),
       file?.id ?? "", file ? driveFileUrl(file.id) : "", cover?.id ?? "", cover ? driveFileUrl(cover.id) : "",
-      post?.title ?? "", post?.description ?? "", post?.tags.join(", ") ?? "", job.publish?.hashtags.join(" ") ?? "",
+      post?.title ?? "", post?.description ?? "", post?.tags.join(", ") ?? "", hashtags?.join(" ") ?? "",
       driveFolderUrl(drive.folderId),
     ];
   });

@@ -46,7 +46,8 @@ describe("sheet ranges", () => {
 describe("sheet rows", () => {
   const kit: PublishKit = {
     by: "Claude", niche: null, titles: ["Cô giáo và ngôi trường bên sông"], coverText: "NGÔI TRƯỜNG BÊN SÔNG",
-    caption: "Một đêm mưa…", hashtags: ["#truyenma", "#fyp"], partHooks: ["Tiếng gõ cửa lúc nửa đêm", "Ai đứng sau tấm bảng?"],
+    caption: "Một đêm mưa…", hashtags: ["#truyenma", "#truyenmamientay", "#kechuyen", "#truyenaudio", "#cogiaotre", "#ngoitruongbensong"],
+    partHooks: ["Tiếng gõ cửa lúc nửa đêm", "Ai đứng sau tấm bảng?"],
     youtube: { title: "Ngôi trường bên sông | Truyện ma", description: "Mô tả", tags: ["truyện ma", "kể chuyện"] },
   };
   const video = (file: string) => ({ file, textFile: file.replace(".mp4", ".txt"), durationSec: 150.4, cover: file.replace(".mp4", ".jpg") });
@@ -78,16 +79,26 @@ describe("sheet rows", () => {
     expect(row(0)).toMatchObject({
       format: "tiktok", kind: "part", part: 1, total_parts: 2, duration_sec: 150,
       video_file_id: "v1", video_url: "https://drive.google.com/file/d/v1/view", cover_file_id: "c1",
-      post_title: "", hashtags: "#truyenma #fyp", folder_url: "https://drive.google.com/drive/folders/folder-1",
+      post_title: "", folder_url: "https://drive.google.com/drive/folders/folder-1",
     });
-    expect(row(0).post_description).toContain("Phần 1/2");
-    expect(row(0).post_description).toContain("Tiếng gõ cửa lúc nửa đêm");
+    // TikTok: the story's name and part, then the five hashtags TikTok takes; no hook or description.
+    expect(row(0).post_description).toBe("Cô giáo và ngôi trường bên sông | Phần 1/2\n\n#truyenma #truyenmamientay #kechuyen #truyenaudio #cogiaotre");
     // Not uploaded yet: no Drive links.
     expect(row(1)).toMatchObject({ video_file_id: "", video_url: "" });
     expect(row(2)).toMatchObject({
-      format: "youtube", kind: "full", part: "", post_title: "Ngôi trường bên sông | Truyện ma", tags: "truyện ma, kể chuyện",
+      format: "youtube", kind: "full", part: "", post_title: "Ngôi trường bên sông | Truyện ma", post_description: "Mô tả", tags: "truyện ma, kể chuyện",
     });
     expect(PENDING).toBe("pending");
+  });
+
+  it("lists only the hashtags TikTok takes on TikTok rows, and all of them on YouTube rows", () => {
+    const rows = sheetRows(job, drive, "2026-10-15T10:00:00.000Z");
+    const hashtags = rows.map((r) => r[SHEET_HEADER.indexOf("hashtags")]);
+    expect(hashtags).toEqual([
+      "#truyenma #truyenmamientay #kechuyen #truyenaudio #cogiaotre",
+      "#truyenma #truyenmamientay #kechuyen #truyenaudio #cogiaotre",
+      "#truyenma #truyenmamientay #kechuyen #truyenaudio #cogiaotre #ngoitruongbensong",
+    ]);
   });
 });
 

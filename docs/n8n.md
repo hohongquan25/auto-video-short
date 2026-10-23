@@ -41,7 +41,7 @@ Trong n8n, tạo credential **Header Auth** với Name `Authorization` và Value
  "backgroundIds":["<id video nền>"],"reviewBeforeTts":false,"subtitles":true,"fullVideo":true,"formats":["tiktok","youtube"],"fit":"blur","minPartSec":120,"maxPartSec":300}
 ```
 
-Lấy `styleId` từ `GET /api/styles` và id video nền từ `GET /api/backgrounds`. `backgroundIds` là danh sách video nền được ghép ngẫu nhiên (chỉ lặp lại khi đã dùng hết); bỏ trường này thì dùng cả thư viện. Workflow cũ gửi `"backgroundId"` (một id) vẫn chạy được. Giọng đọc: `vi-VN-HoaiMyNeural` (nữ) hoặc `vi-VN-NamMinhNeural` (nam), hoặc giọng OlvRoc miễn phí dạng `olvroc:<tên giọng>` (ví dụ `olvroc:Hải Đăng`, danh sách đầy đủ trong `voices` của `GET /api/meta`). `aiProvider` là `claude` hoặc `gemini`. `formats` là danh sách một hoặc nhiều định dạng: `tiktok` (dọc 1080×1920), `youtube` (ngang 1920×1080), `original` (giữ khung video nền, mặc định). Mỗi định dạng ra một bộ video riêng; khi có cả `tiktok` và `youtube` thì YouTube chỉ ra một video dài cả truyện, không chia phần. Workflow cũ gửi `"format": "tiktok"` (một giá trị) vẫn chạy được; `fit` là `blur` (nền mờ, mặc định) hoặc `crop` (cắt cho đầy khung).
+Trường nào bỏ trống thì lấy cài đặt mặc định đã lưu ở trang **Cài đặt mặc định** của Story Studio (như nút Tạo nhanh); gửi `{}` hoặc bỏ hẳn `settings` là dùng toàn bộ cài đặt mặc định. Lấy `styleId` từ `GET /api/styles` và id video nền từ `GET /api/backgrounds`. `backgroundIds` là danh sách video nền được ghép ngẫu nhiên (chỉ lặp lại khi đã dùng hết); bỏ trường này thì dùng cả thư viện. Workflow cũ gửi `"backgroundId"` (một id) vẫn chạy được. Giọng đọc: `vi-VN-HoaiMyNeural` (nữ) hoặc `vi-VN-NamMinhNeural` (nam), hoặc giọng OlvRoc miễn phí dạng `olvroc:<tên giọng>` (ví dụ `olvroc:Hải Đăng`, danh sách đầy đủ trong `voices` của `GET /api/meta`). `aiProvider` là `claude` hoặc `gemini`. `formats` là danh sách một hoặc nhiều định dạng: `tiktok` (dọc 1080×1920), `youtube` (ngang 1920×1080), `original` (giữ khung video nền, mặc định). Mỗi định dạng ra một bộ video riêng; khi có cả `tiktok` và `youtube` thì YouTube chỉ ra một video dài cả truyện, không chia phần. Workflow cũ gửi `"format": "tiktok"` (một giá trị) vẫn chạy được; `fit` là `blur` (nền mờ, mặc định) hoặc `crop` (cắt cho đầy khung).
 
 **Tạo job từ link video** (YouTube, TikTok, Facebook…) thay vì tải file: gửi Body **JSON**, Story Studio tự tải phần âm thanh về:
 
@@ -86,7 +86,7 @@ Lấy `styleId` từ `GET /api/styles` và id video nền từ `GET /api/backgro
             "video": "http://host.docker.internal:5178/files/jobs/<id>/parts/tiktok/part-01.mp4",
             "text":  "http://host.docker.internal:5178/files/jobs/<id>/parts/tiktok/part-01.txt",
             "cover": "http://host.docker.internal:5178/files/jobs/<id>/parts/tiktok/part-01.jpg",
-            "post":  { "title": null, "description": "Tiêu đề | Phần 1/5\n\nCâu nhử…\n\n#truyenaudio #fyp", "tags": [] } }
+            "post":  { "title": null, "description": "Tên truyện | Phần 1/5\n\n#truyenma #truyenaudio #kechuyen…", "tags": [] } }
         ],
         "full": { "durationSec": 560.4, "video": ".../parts/tiktok/full.mp4", "text": ".../parts/tiktok/full.txt" } },
       { "format": "youtube", "parts": [],
@@ -100,12 +100,12 @@ Lấy `styleId` từ `GET /api/styles` và id video nền từ `GET /api/backgro
 
 Mỗi định dạng đã chọn là một phần tử trong `links.outputs`. `full` là video cả truyện: bản ghép các phần (khi bật `fullVideo`), hoặc video duy nhất của YouTube khi chọn cùng TikTok. `links.parts` và `links.full` giữ lại cho workflow cũ, trỏ tới định dạng đầu tiên.
 
-**Gợi ý đăng bài.** Sau khi dựng xong, bước "Gợi ý đăng bài" cho AI của job đọc cả truyện, xác định ngách truyện và tìm trên web các truyện, kênh cùng ngách (kết quả ở `job.publish.niche`), rồi viết tiêu đề, mô tả, hashtag (và tiêu đề, mô tả, thẻ YouTube nếu có định dạng YouTube), rồi vẽ ảnh bìa JPG cho từng video. Mỗi video trong `links` có:
+**Gợi ý đăng bài.** Sau khi dựng xong, bước "Gợi ý đăng bài" cho AI của job đọc cả truyện, xác định ngách truyện và tìm trên web các truyện, kênh cùng ngách (kết quả ở `job.publish.niche`), rồi viết tiêu đề, tên ngắn của truyện, mô tả, 5 hashtag (và tiêu đề, mô tả, thẻ YouTube nếu có định dạng YouTube), rồi vẽ ảnh bìa JPG cho từng video. Mỗi video trong `links` có:
 
 - `cover`: link ảnh bìa.
-- `post`: nội dung để dán khi đăng. Với TikTok, `title` là `null` và `description` đã gồm tiêu đề, câu nhử của phần đó và hashtag. Với YouTube, `title`, `description`, `tags` tách riêng.
+- `post`: nội dung để dán khi đăng. Với TikTok (và `original`), `title` là `null` và `description` chỉ gồm tên ngắn của truyện kèm số phần, ví dụ `Tên truyện | Phần 1/5` (video cả truyện là `Tên truyện (trọn bộ)`), rồi tối đa 5 hashtag vì TikTok chỉ nhận 5; không có mô tả hay câu nhử. Tên ngắn là `job.publish.storyName` (đổi tên video thì nó theo tên mới), job cũ chưa có thì rút từ tiêu đề đầu tiên. Với YouTube, `title`, `description`, `tags` tách riêng.
 
-Bộ gợi ý đầy đủ (nhiều tiêu đề, mô tả, hashtag…) nằm ở `job.publish`. AI lỗi thì job vẫn xong, gợi ý được lấy từ tên truyện (`job.publish.by` là `null`). Tạo lại gợi ý: `POST /api/jobs/{id}/rerun` với `{"fromStep": "publish"}`.
+Bộ gợi ý đầy đủ (nhiều tiêu đề, mô tả `caption`, câu nhử từng phần `partHooks`, hashtag…) nằm ở `job.publish`. AI lỗi thì job vẫn xong, gợi ý được lấy từ tên truyện (`job.publish.by` là `null`). Tạo lại gợi ý: `POST /api/jobs/{id}/rerun` với `{"fromStep": "publish"}`.
 
 **Tải video.** Dùng Split Out trên `body.links.parts` (hoặc `body.links.outputs[1].full` cho bản YouTube), rồi HTTP Request `GET {{ $json.video }}` (có Header Auth, Response Format = File). Sau đó đưa file sang YouTube, Drive, Telegram…
 
@@ -124,13 +124,13 @@ Muốn mọi job (kể cả job tạo từ giao diện) đều báo về một w
 | Đổi tên | `PATCH /api/jobs/{id}` với `{"title": "..."}` |
 | Tóm tắt video | `POST /api/summaries`: file video ở trường `media` (kèm phụ đề `.srt`/`.vtt` ở `captions` nếu có) hoặc link ở `url`, cài đặt ở `settings` (xem dưới) |
 
-Cài đặt tóm tắt, trường nào bỏ trống thì lấy mặc định:
+Cài đặt tóm tắt, trường nào bỏ trống thì lấy cài đặt mặc định đã lưu ở trang **Cài đặt mặc định** của Story Studio (chưa lưu thì như dưới, với giọng và tốc độ mặc định của video truyện). Độ dài mặc định dài quá so với video thì AI tự chọn độ dài:
 
 ```json
-{"targetSec": 300, "language": "", "useCaptions": true, "subtitles": "none", "summaryLanguage": "vi", "format": "original", "fit": "blur", "aiProvider": "claude"}
+{"targetSec": null, "focus": "", "language": "", "useCaptions": true, "voice": "olvroc:Ngọc Huyền", "rate": "+0%", "subtitles": true, "format": "original", "fit": "blur", "aiProvider": "claude"}
 ```
 
-`language` là ngôn ngữ video nói (`""` để tự nhận), `subtitles` là `none`, `source` (theo lời nói) hoặc mã ngôn ngữ để dịch phụ đề sang (`vi`, `en`…). Job tóm tắt dùng chung các API xem, chạy lại, dừng, xoá ở trên. Khi xong, `links.summary` có link video rút gọn và bản tóm tắt; chạy lại với cài đặt mới: `POST /api/jobs/{id}/rerun` với `{"fromStep": "summarize", "summary": {...}}`.
+AI chọn các đoạn hình và viết lời kể tiếng Việt theo ngôi thứ ba cho từng đoạn, nối mạch giữa các đoạn; video tóm tắt tắt tiếng gốc, chuyển cảnh mờ dần, chỉ có giọng kể `voice` (bỏ trống thì lấy giọng và tốc độ mặc định của job truyện). `targetSec` là độ dài mong muốn tính bằng giây, `null` để AI tự chọn độ dài vừa đủ kể hết nội dung; độ dài AI ước tính và lý do nằm ở `summary.result.suggested` (`{"sec", "reason"}`). `focus` là trọng tâm tóm tắt viết bằng lời, AI ưu tiên nó khi chọn đoạn và viết lời kể (ví dụ `"Tập trung vào các cảnh đánh nhau, giữ trọn từng trận"`; `""` để kể đều toàn bộ nội dung). `language` là ngôn ngữ video nói (`""` để tự nhận), `subtitles` chèn lời kể thành phụ đề. Job tóm tắt dùng chung các API xem, chạy lại, dừng, xoá ở trên. Khi xong, `links.summary` có link video tóm tắt và bản tóm tắt; chạy lại với cài đặt mới: `POST /api/jobs/{id}/rerun` với `{"fromStep": "summarize", "summary": {...}}` (chỉ đổi giọng thì `"fromStep": "narrate"`).
 
 Webhook bị lỗi (n8n tắt…) được thử lại 3 lần rồi ghi cảnh báo vào nhật ký job. Job vẫn hoàn thành bình thường.
 
@@ -193,10 +193,10 @@ Mỗi dòng là một video. Dòng tiêu đề được tạo tự động ở t
 | `duration_sec` | Độ dài video (giây) |
 | `video_file_id`, `video_url` | Id và link Drive của video. n8n tải file bằng id này |
 | `cover_file_id`, `cover_url` | Ảnh bìa |
-| `post_title` | Tiêu đề khi đăng (YouTube). TikTok để trống vì tiêu đề nằm trong mô tả |
-| `post_description` | Mô tả để dán khi đăng. Với TikTok đã gồm tiêu đề, câu nhử và hashtag |
+| `post_title` | Tiêu đề khi đăng (YouTube). TikTok để trống vì tên video nằm ở dòng đầu `post_description` |
+| `post_description` | Mô tả để dán khi đăng. Với TikTok chỉ gồm tên ngắn của truyện kèm số phần, rồi tối đa 5 hashtag |
 | `tags` | Thẻ YouTube, cách nhau bằng dấu phẩy |
-| `hashtags` | Hashtag của truyện |
+| `hashtags` | Hashtag của truyện. Dòng TikTok và `original` chỉ có tối đa 5 hashtag đầu, giống cuối `post_description` |
 | `folder_url` | Thư mục Drive của job |
 | `status` | `pending` khi mới thêm. **n8n quản lý** từ cột này trở đi |
 | `scheduled_at` | Để trống; bạn hoặc n8n điền giờ muốn đăng |

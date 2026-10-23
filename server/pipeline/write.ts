@@ -9,7 +9,7 @@ import type { StepReporter } from "./run-job.js";
 /** One chapter per ~3,500 characters: long enough to develop, short enough for one reliable AI reply. */
 const CHAPTER_CHARS = 3500;
 /** Vietnamese averages about 4.7 characters per word (syllable) with spaces; AIs size text better in words. */
-const CHARS_PER_WORD = 4.7;
+export const CHARS_PER_WORD = 4.7;
 const CONTEXT_CHARS = 1500;
 
 const RULES = `Quy tắc bắt buộc:

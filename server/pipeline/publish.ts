@@ -80,7 +80,7 @@ function fallbackKit(title: string, partCount: number, youtube: boolean): Publis
     titles: [title],
     coverText: title,
     caption: title,
-    hashtags: ["#truyenaudio", "#kechuyen", "#truyenhay", "#fyp"],
+    hashtags: ["#truyenaudio", "#kechuyen", "#truyenhay"],
     partHooks: Array.from({ length: partCount }, () => ""),
     youtube: youtube ? { title, description: title, tags: ["truyện audio", "kể chuyện"] } : null,
   };
@@ -125,17 +125,17 @@ ${research}
 
 3. Viết gợi ý đăng bài theo các yêu cầu:
 - Tiêu đề phải có ý nghĩa với truyện: gắn với một chi tiết có thật trong truyện (nhân vật, địa danh, đồ vật, hiện tượng) và nói đúng điều truyện kể, đồng thời để lại một câu hỏi khiến người xem phải nghe mới biết đáp án. Không dùng tiêu đề chung chung đặt cho truyện nào cũng được, không giật tít sai sự thật, không tiết lộ kết truyện. Học cách đặt tên của các video thành công cùng ngách nhưng không chép.
-- Hashtag gồm ba tầng: hai đến ba hashtag lớn của thể loại; bốn đến năm hashtag của ngách mà các video cùng ngách đang dùng; hai đến ba hashtag riêng của truyện (tên truyện, địa danh, nhân vật hay yếu tố đặc trưng); thêm #fyp hoặc #xuhuong. Viết tiếng Việt không dấu, không khoảng trắng. Ưu tiên hashtag đang thật sự được dùng, không bịa hashtag không ai tìm.
+- Hashtag: đúng năm hashtag liên quan nhất, vì TikTok chỉ nhận tối đa năm. Gồm một đến hai hashtag lớn của thể loại; hai hashtag của ngách mà các video cùng ngách đang dùng; một đến hai hashtag riêng của truyện (tên truyện, địa danh, nhân vật hay yếu tố đặc trưng). Không dùng hashtag chung chung như #fyp, #xuhuong. Viết tiếng Việt không dấu, không khoảng trắng. Ưu tiên hashtag đang thật sự được dùng, không bịa hashtag không ai tìm.
 - Mô tả chứa những từ khoá người xem ngách này hay tìm, đọc tự nhiên chứ không nhồi từ khoá.
 - Câu nhử của mỗi phần dựa vào diễn biến của chính phần đó, gợi tò mò về điều sắp xảy ra.
 
 Sau khi tìm hiểu xong, câu trả lời cuối cùng chỉ gồm DUY NHẤT một JSON hợp lệ, không markdown, không lời dẫn, theo mẫu:
 {"niche": {"genre": "thể loại và ngách cụ thể", "audience": "ai hay nghe ngách này, nghe vào lúc nào", "similar": ["tên vài truyện, series hoặc kênh cùng ngách đang được xem nhiều"], "insight": "một đến hai câu: video thành công trong ngách này đặt tên, viết mô tả và dùng hashtag ra sao"},
  "titles": ["ba tiêu đề khác nhau, mỗi tiêu đề dưới 70 ký tự"],
- "storyName": "tên ngắn của truyện để đặt tên file video: từ ba đến tám chữ, nói đúng nội dung truyện, viết có dấu; bỏ tên kênh, số lượt xem, thời lượng, số tập, chữ FULL, tên thể loại và lời giật tít",
+ "storyName": "tên ngắn của truyện, dùng làm tên video khi đăng TikTok và để đặt tên file video: từ ba đến tám chữ, dưới 40 ký tự, nói đúng nội dung truyện, viết có dấu; bỏ tên kênh, số lượt xem, thời lượng, số tập, chữ FULL, tên thể loại và lời giật tít",
  "coverText": "chữ in to trên ảnh bìa: từ ba đến bảy chữ, gắn với chi tiết đắt nhất của truyện, không dấu câu thừa",
  "caption": "mô tả một đến hai câu khơi gợi tò mò, có từ khoá của ngách, có thể kèm một đến hai emoji, không chứa hashtag",
- "hashtags": ["mười đến mười ba hashtag theo ba tầng ở trên"],
+ "hashtags": ["đúng năm hashtag theo yêu cầu ở trên"],
  "partHooks": ["đúng ${n} câu theo thứ tự các phần, mỗi câu dưới 120 ký tự"],
  "youtube": ${youtube ? `{"title": "tiêu đề YouTube dưới 100 ký tự, có ý nghĩa với truyện và có từ khoá người xem ngách này hay tìm", "description": "ba đến năm đoạn ngắn: giới thiệu truyện có từ khoá của ngách, không khí, lời mời nghe hết và đăng ký kênh", "tags": ["mười đến mười lăm từ khoá tìm kiếm tiếng Việt của ngách và của riêng truyện"]}` : "null"}}`;
 }

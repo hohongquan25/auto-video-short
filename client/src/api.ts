@@ -93,6 +93,8 @@ export const api = {
 
   defaults: () => request<DefaultSettings>("GET", "/api/defaults"),
   saveDefaults: (defaults: DefaultSettings) => request<DefaultSettings>("PUT", "/api/defaults", defaults),
+  summaryDefaults: () => request<SummarySettings>("GET", "/api/summary-defaults"),
+  saveSummaryDefaults: (defaults: SummarySettings) => request<SummarySettings>("PUT", "/api/summary-defaults", defaults),
 
   brand: () => request<Brand>("GET", "/api/brand"),
   saveBrand: (brand: Brand) => request<Brand>("PUT", "/api/brand", brand),

@@ -743,8 +743,8 @@ section:first-child > .output-head { margin-top: 0; }
 .summary-empty { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .summary-empty p { max-width: 560px; margin: 0; }
 .captions-row { margin-top: 10px; }
-.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 16px; }
 .target-control { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+.length-advice { margin-top: 8px; flex-wrap: wrap; }
 .submit-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .submit-card .progress { width: 100%; }
 .problem-list { margin: 0; padding-left: 18px; }

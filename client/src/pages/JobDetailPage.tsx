@@ -37,6 +37,7 @@ const TAB_FOR_STEP: Record<Step, Tab> = {
   publish: "publish",
   upload: "log",
   summarize: "log",
+  narrate: "log",
   cut: "log",
 };
 

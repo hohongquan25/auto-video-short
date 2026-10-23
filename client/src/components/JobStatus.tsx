@@ -20,6 +20,7 @@ export const STEP_ICONS: Record<Step, LucideIcon> = {
   publish: Megaphone,
   upload: CloudUpload,
   summarize: ListChecks,
+  narrate: Mic,
   cut: Scissors,
 };
 

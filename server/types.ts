@@ -1,5 +1,5 @@
 export const STEPS = [
-  "download", "captions", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish", "upload", "summarize", "cut",
+  "download", "captions", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish", "upload", "summarize", "narrate", "cut",
 ] as const;
 export type Step = (typeof STEPS)[number];
 
@@ -16,6 +16,7 @@ export const STEP_LABELS: Record<Step, string> = {
   publish: "Gợi ý đăng bài",
   upload: "Lưu lên Drive",
   summarize: "AI tóm tắt",
+  narrate: "Lồng giọng kể",
   cut: "Cắt ghép video",
 };
 
@@ -122,7 +123,7 @@ export interface PublishKit {
   niche: { genre: string; audience: string; similar: string[]; insight: string } | null;
   /** Alternative post titles, best first. */
   titles: string[];
-  /** The story's own short name, for file names; missing from kits written before it was asked for. */
+  /** The story's own short name, for file names and as the name in TikTok posts; missing from kits written before it was asked for. */
   storyName?: string | null;
   /** A few punchy words printed on the covers. */
   coverText: string;
@@ -138,21 +139,32 @@ export interface PublishKit {
 
 /** What to fill in when posting one video. */
 export interface PostSuggestion {
-  /** Null where the platform has only a description (TikTok), which then starts with the title. */
+  /** Null where the platform has only a description (TikTok), which then starts with the story's short name. */
   title: string | null;
   description: string;
   tags: string[];
 }
 
-/** The post for one video of `format`; `part` is null for a video holding the whole story. */
+/** TikTok takes at most this many hashtags in a post. */
+export const TIKTOK_HASHTAGS = 5;
+
+/**
+ * The post for one video of `format`; `part` is null for a video holding the
+ * whole story. Other than YouTube's own texts, a post is just the story's
+ * short name and the hashtags TikTok takes, without a description.
+ */
 export function postFor(kit: PublishKit, format: VideoFormat, part: { index: number; total: number } | null): PostSuggestion {
   const suffix = part ? ` | Phần ${part.index}/${part.total}` : "";
-  if (format === "youtube" && kit.youtube) {
-    return { title: kit.youtube.title + suffix, description: kit.youtube.description, tags: kit.youtube.tags };
+  const best = kit.titles[0] ?? "";
+  if (format === "youtube") {
+    if (kit.youtube) return { title: kit.youtube.title + suffix, description: kit.youtube.description, tags: kit.youtube.tags };
+    // Without the AI's YouTube texts a YouTube video keeps a full description: title, teaser or caption, every hashtag.
+    const hook = (part && kit.partHooks[part.index - 1]) || kit.caption;
+    return { title: null, description: [best + (part ? suffix : " (trọn bộ)"), hook, kit.hashtags.join(" ")].filter(Boolean).join("\n\n"), tags: [] };
   }
-  const title = (kit.titles[0] ?? "") + (part ? suffix : " (trọn bộ)");
-  const hook = (part && kit.partHooks[part.index - 1]) || kit.caption;
-  return { title: null, description: [title, hook, kit.hashtags.join(" ")].filter(Boolean).join("\n\n"), tags: [] };
+  // A kit without the AI's short name (written before it was asked for) takes it from the best title.
+  const name = (kit.storyName || storyNameFromTitle(best) || best) + (part ? suffix : " (trọn bộ)");
+  return { title: null, description: [name, kit.hashtags.slice(0, TIKTOK_HASHTAGS).join(" ")].filter(Boolean).join("\n\n"), tags: [] };
 }
 
 /** "Ba Tiếng Gõ Cửa!" → "ba_tieng_go_cua": no marks, lowercase, words joined by "_". */
@@ -226,7 +238,7 @@ export interface StepTiming {
   endedAt: string | null;
 }
 
-/** A story job turns a recording or topic into narrated videos; a summary job cuts a long video down to what matters. */
+/** A story job turns a recording or topic into narrated videos; a summary job retells a long video over the passages that matter. */
 export type JobKind = "story" | "summary";
 
 export interface Job {
@@ -276,39 +288,77 @@ export const LANGUAGES: Record<string, string> = {
 export const languageLabel = (code: string): string => LANGUAGES[code.split("-")[0].toLowerCase()] ?? code;
 
 export interface SummarySettings {
-  /** Which AI picks the passages and writes the summary. */
+  /** Which AI picks the passages and writes the summary and its narration. */
   aiProvider: AiProvider;
-  /** Wanted length of the cut video. */
-  targetSec: number;
+  /** Wanted length of the cut video; null lets the AI take what it judges telling every main point needs. */
+  targetSec: number | null;
+  /** What the summary should dwell on, in the user's words, ahead of the AI's general rules; "" tells the whole content evenly. */
+  focus: string;
   /** What the video speaks, a code from LANGUAGES; "" lets the captions or Whisper tell. */
   language: string;
   /** Read the video's own captions when it has some, instead of transcribing its speech. */
   useCaptions: boolean;
-  /** Burned-in subtitles: "none", "source" (what is said, as said), or a language code to translate them into. */
-  subtitles: string;
-  /** Language the written summary is in. */
-  summaryLanguage: string;
+  /** The narrator's voice and speed, as in a story job. The video's own sound is dropped. */
+  voice: string;
+  rate: string;
+  /** Burn the narration as subtitles into the video. */
+  subtitles: boolean;
   format: VideoFormat;
   fit: FitMode;
 }
 
 export const SUMMARY_DEFAULTS: SummarySettings = {
-  aiProvider: "claude", targetSec: 300, language: "", useCaptions: true, subtitles: "none", summaryLanguage: "vi", format: "original", fit: "blur",
+  aiProvider: "claude", targetSec: null, focus: "", language: "", useCaptions: true, voice: BUILTIN_DEFAULTS.voice, rate: "+0%",
+  subtitles: true, format: "original", fit: "blur",
 };
 
-/** One passage of the source kept in the cut, in the source's seconds. */
+/** Ready-made focuses for a summary; the user may edit one or write their own. */
+export const SUMMARY_FOCUS_PRESETS: { label: string; hint: string; text: string }[] = [
+  {
+    label: "Cảnh đánh nhau", hint: "giữ trọn các trận đấu",
+    text: "Tập trung vào các cảnh đánh nhau, giao chiến, rượt đuổi. Dành phần lớn thời lượng cho những cảnh này và giữ trọn từng trận, " +
+      "từ lúc xung đột nổ ra đến khi ngã ngũ, kể cả những khoảng dài không lời thoại nằm giữa lời thách thức, tiếng la hét hay mệnh lệnh tấn công. " +
+      "Lời kể tả dồn dập từng pha giao đấu: ai ra đòn, ai lép vế, bước ngoặt, kết cục, đủ dài để phủ hết cảnh. " +
+      "Phần còn lại của câu chuyện chỉ kể gọn trong các câu chuyển ý, đủ để người xem hiểu vì sao các bên đối đầu.",
+  },
+  {
+    label: "Tình cảm", hint: "chuyện tình, cảm xúc",
+    text: "Tập trung vào chuyện tình cảm giữa các nhân vật: những lần gặp gỡ, rung động, hiểu lầm, chia ly và hàn gắn. " +
+      "Lời kể khắc hoạ cảm xúc của nhân vật. Các tuyến truyện khác chỉ kể gọn trong các câu chuyển ý.",
+  },
+  {
+    label: "Gay cấn, bất ngờ", hint: "bí mật, cú lật",
+    text: "Tập trung vào những tình tiết gay cấn và bất ngờ: bí mật bị lộ, cú lật ngược, khoảnh khắc nghẹt thở. " +
+      "Lời kể giữ nhịp hồi hộp, gợi tò mò trước mỗi bước ngoặt rồi mới hé lộ. Các phần bình lặng chỉ kể gọn trong các câu chuyển ý.",
+  },
+];
+
+/** A focus by its preset's name, or "riêng" when the user wrote their own; null when there is none. */
+export function focusLabel(focus: string): string | null {
+  if (!focus) return null;
+  return SUMMARY_FOCUS_PRESETS.find((p) => p.text === focus)?.label ?? "riêng";
+}
+
+/** One passage of the source kept in the cut, in the source's seconds, and what the narrator says over it. */
 export interface SummaryClip {
   startSec: number;
   endSec: number;
-  /** What the passage is about, in the summary's language. */
-  note: string;
+  /** The passage retold in the third person, in Vietnamese. */
+  narration: string;
+  /** Length in the cut video, which follows the narration; set once it has been read aloud. */
+  outSec?: number;
 }
+
+/** A wanted length under this share of what the AI judged enough likely leaves main points out. */
+export const SHORT_OF_SUGGESTED = 0.8;
 
 export interface SummaryResult {
   title: string;
   text: string;
   keyPoints: string[];
   clips: SummaryClip[];
+  /** How long the AI judged a summary must be to tell every main point, and why; missing from summaries made before it was asked. */
+  suggested?: { sec: number; reason: string } | null;
   /** The cut video in the job folder; null until the cut step has made it. */
   file: string | null;
   durationSec: number | null;

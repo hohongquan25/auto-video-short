@@ -41,7 +41,8 @@ export async function synthesizeToFile(text: string, voice: string, rate: string
  */
 const CONCURRENCY = { edge: 1, olvroc: 1 } as const;
 
-async function synthesize(
+/** Read `text` aloud into `outFile` (MP3) with Edge TTS or OlvRoc, retrying what may pass. */
+export async function synthesize(
   text: string, voice: string, rate: string, outFile: string, r: StepReporter, label: string,
 ): Promise<void> {
   const provider = voiceProvider(voice);

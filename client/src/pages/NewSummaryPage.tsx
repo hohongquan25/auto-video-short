@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, CircleAlert, FileText, FileVideo, Link2, LoaderCircle, Scissors, Upload, X } from "lucide-react";
+import { ArrowLeft, CircleAlert, FileText, FileVideo, Link2, LoaderCircle, Save, Scissors, Upload, X } from "lucide-react";
 import { api, type SummarySettings } from "../api";
 import { FileDrop } from "../components/FileDrop";
 import { LinkSource, useLinkProbe } from "../components/LinkSource";
 import { providerReady } from "../components/Pickers";
-import { SummarySettingsForm, suggestTarget, summaryProblems } from "../components/SummarySettings";
+import { SummarySettingsForm, summaryProblems } from "../components/SummarySettings";
 import { errorMessage, useToast } from "../components/Toast";
 import { SUMMARY_DEFAULTS, formatBytes, formatDuration } from "../format";
 import { useLibrary } from "../useLibrary";
@@ -24,29 +24,47 @@ export function NewSummaryPage() {
   const probe = useLinkProbe(mode === "link" ? link : "");
   const media = useMediaInfo(file);
   const [title, setTitle] = useState("");
-  const [settings, setSettings] = useState<SummarySettings>(SUMMARY_DEFAULTS);
-  /** Until the length is picked by hand, it follows the chosen video. */
-  const [targetPicked, setTargetPicked] = useState(false);
+  // The page starts from the saved summary defaults (Cài đặt mặc định).
+  const [defaults, setDefaults] = useState<SummarySettings | null>(null);
+  const [settings, setSettings] = useState<SummarySettings | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savingDefaults, setSavingDefaults] = useState(false);
   const [uploaded, setUploaded] = useState<number | null>(null);
 
-  const set = (patch: Partial<SummarySettings>) => {
-    if ("targetSec" in patch) setTargetPicked(true);
-    setSettings((s) => ({ ...s, ...patch }));
-  };
+  const set = (patch: Partial<SummarySettings>) => setSettings((s) => (s ? { ...s, ...patch } : s));
 
-  // Claude when it is signed in, otherwise Gemini when it has a key.
   useEffect(() => {
-    if (meta && !providerReady(meta, "claude") && providerReady(meta, "gemini")) setSettings((s) => ({ ...s, aiProvider: "gemini" }));
-  }, [meta]);
+    api.summaryDefaults().then(setDefaults).catch((e) => {
+      toast("error", errorMessage(e));
+      setDefaults(SUMMARY_DEFAULTS);
+    });
+  }, [toast]);
+
+  // Once both are known: the default AI, or the other one when the default is not ready and the other is.
+  useEffect(() => {
+    if (!meta || !defaults || settings) return;
+    const other = defaults.aiProvider === "claude" ? "gemini" : "claude";
+    const swap = !providerReady(meta, defaults.aiProvider) && providerReady(meta, other);
+    setSettings(swap ? { ...defaults, aiProvider: other } : defaults);
+  }, [meta, defaults, settings]);
 
   const sourceSec = mode === "file" ? media.duration : probe.info?.durationSec ?? null;
-  useEffect(() => {
-    if (sourceSec && !targetPicked) setSettings((s) => ({ ...s, targetSec: suggestTarget(sourceSec) }));
-  }, [sourceSec, targetPicked]);
 
   if (loadError) return <div className="alert error"><CircleAlert size={16} />{loadError}</div>;
-  if (!meta) return <div className="loading"><LoaderCircle className="spin" /> Đang tải…</div>;
+  if (!meta || !settings) return <div className="loading"><LoaderCircle className="spin" /> Đang tải…</div>;
+
+  const isDefault = defaults !== null && JSON.stringify(settings) === JSON.stringify(defaults);
+  const saveAsDefaults = async () => {
+    setSavingDefaults(true);
+    try {
+      setDefaults(await api.saveSummaryDefaults(settings));
+      toast("success", "Đã lưu làm cài đặt mặc định");
+    } catch (err) {
+      toast("error", errorMessage(err));
+    } finally {
+      setSavingDefaults(false);
+    }
+  };
 
   const hasSource = mode === "file" ? Boolean(file) : probe.status === "ok";
   const problems = [
@@ -77,7 +95,7 @@ export function NewSummaryPage() {
         <div>
           <h1>Tóm tắt video mới</h1>
           <p className="muted">
-            App đọc nội dung video từ phụ đề có sẵn hoặc giọng nói (Whisper {meta.whisperModel}, nhiều ngôn ngữ), AI chọn những đoạn quan trọng và ghép lại thành một video ngắn.
+            App đọc nội dung video từ phụ đề có sẵn hoặc giọng nói (Whisper {meta.whisperModel}, nhiều ngôn ngữ), AI chọn những đoạn quan trọng, viết lời kể lại theo ngôi thứ ba rồi lồng giọng kể lên các đoạn đó thành một video ngắn.
           </p>
         </div>
       </div>
@@ -149,6 +167,12 @@ export function NewSummaryPage() {
       <div className="card">
         <h2>Bản rút gọn</h2>
         <SummarySettingsForm value={settings} set={set} meta={meta} sourceSec={sourceSec} />
+        <div className="row defaults-row">
+          <button onClick={saveAsDefaults} disabled={isDefault || savingDefaults}>
+            <Save size={15} /> {isDefault ? "Đang là cài đặt mặc định" : "Lưu làm cài đặt mặc định"}
+          </button>
+          <span className="small muted">Dùng cho mỗi lần tạo tóm tắt mới, sửa ở trang Cài đặt mặc định.</span>
+        </div>
       </div>
 
       <div className="card submit-card">

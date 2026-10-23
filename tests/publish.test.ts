@@ -62,13 +62,59 @@ describe("publish kit", () => {
     expect(kitPrompt({ ...base, webSearch: true })).toContain("đúng 2 câu");
   });
 
-  it("builds TikTok posts from the title, hook and hashtags, and YouTube posts from the YouTube texts", () => {
-    const kit: PublishKit = {
-      by: "AI", niche: null, titles: ["Tên"], coverText: "", caption: "Mô tả", hashtags: ["#a", "#b"], partHooks: ["Nhử 1", ""],
-      youtube: { title: "YT", description: "Dài", tags: ["t"] },
-    };
-    expect(postFor(kit, "tiktok", { index: 1, total: 2 })).toEqual({ title: null, description: "Tên | Phần 1/2\n\nNhử 1\n\n#a #b", tags: [] });
-    expect(postFor(kit, "tiktok", { index: 2, total: 2 }).description).toBe("Tên | Phần 2/2\n\nMô tả\n\n#a #b");
+  it("asks for the five hashtags TikTok takes, without generic ones, and a short name for TikTok", () => {
+    const prompt = kitPrompt({ title: "T", channel: null, story: "s", partTexts: ["p1"], youtube: true, webSearch: false });
+    expect(prompt).toContain("đúng năm hashtag");
+    expect(prompt).toContain("Không dùng hashtag chung chung như #fyp, #xuhuong");
+    expect(prompt).not.toContain("mười đến mười ba hashtag");
+    expect(prompt).toContain("dùng làm tên video khi đăng TikTok");
+  });
+});
+
+describe("post texts", () => {
+  const kit: PublishKit = {
+    by: "AI", niche: null, titles: ["Ba tiếng gõ cửa lúc nửa đêm: ai đứng ngoài hiên?"], storyName: "Ba tiếng gõ cửa",
+    coverText: "", caption: "Mô tả", hashtags: ["#a", "#b", "#c", "#d", "#e", "#f", "#g"], partHooks: ["Nhử 1", "Nhử 2"],
+    youtube: { title: "YT", description: "Dài", tags: ["t"] },
+  };
+
+  it("names a TikTok part by the story's short name and its part, then at most five hashtags", () => {
+    expect(postFor(kit, "tiktok", { index: 1, total: 2 })).toEqual({ title: null, description: "Ba tiếng gõ cửa | Phần 1/2\n\n#a #b #c #d #e", tags: [] });
+    expect(postFor(kit, "original", { index: 2, total: 2 })).toEqual({ title: null, description: "Ba tiếng gõ cửa | Phần 2/2\n\n#a #b #c #d #e", tags: [] });
+  });
+
+  it("leaves the part hook and the description out of TikTok posts", () => {
+    for (const part of [{ index: 1, total: 2 }, { index: 2, total: 2 }, null]) {
+      const { description } = postFor(kit, "tiktok", part);
+      expect(description).not.toContain("Nhử");
+      expect(description).not.toContain("Mô tả");
+    }
+  });
+
+  it("marks the whole story as trọn bộ", () => {
+    expect(postFor(kit, "tiktok", null).description).toBe("Ba tiếng gõ cửa (trọn bộ)\n\n#a #b #c #d #e");
+  });
+
+  it("is only the name when there are no hashtags", () => {
+    expect(postFor({ ...kit, hashtags: [] }, "tiktok", null)).toEqual({ title: null, description: "Ba tiếng gõ cửa (trọn bộ)", tags: [] });
+  });
+
+  it("takes the name from the best title when the kit has no short name", () => {
+    expect(postFor({ ...kit, storyName: null }, "tiktok", { index: 1, total: 2 }).description).toBe("Ba tiếng gõ cửa lúc nửa đêm | Phần 1/2\n\n#a #b #c #d #e");
+    // Kits written before the short name was asked for have none at all.
+    expect(postFor({ ...kit, storyName: undefined }, "tiktok", null).description).toBe("Ba tiếng gõ cửa lúc nửa đêm (trọn bộ)\n\n#a #b #c #d #e");
+    // A title that is all noise stays as it is.
+    expect(postFor({ ...kit, storyName: null, titles: ["[FULL]"], hashtags: [] }, "tiktok", null).description).toBe("[FULL] (trọn bộ)");
+  });
+
+  it("keeps the YouTube texts as they are", () => {
     expect(postFor(kit, "youtube", null)).toEqual({ title: "YT", description: "Dài", tags: ["t"] });
+    expect(postFor(kit, "youtube", { index: 2, total: 3 })).toEqual({ title: "YT | Phần 2/3", description: "Dài", tags: ["t"] });
+  });
+
+  it("gives a YouTube video without the AI's YouTube texts a full description", () => {
+    const plain = { ...kit, youtube: null };
+    expect(postFor(plain, "youtube", null).description).toBe("Ba tiếng gõ cửa lúc nửa đêm: ai đứng ngoài hiên? (trọn bộ)\n\nMô tả\n\n#a #b #c #d #e #f #g");
+    expect(postFor(plain, "youtube", { index: 2, total: 2 }).description).toBe("Ba tiếng gõ cửa lúc nửa đêm: ai đứng ngoài hiên? | Phần 2/2\n\nNhử 2\n\n#a #b #c #d #e #f #g");
   });
 });

@@ -1,7 +1,7 @@
-import { Captions, Check, Clock, FileText, Languages, TriangleAlert } from "lucide-react";
+import { Captions, Check, Clock, Languages, Mic, Sparkles, Target, TriangleAlert } from "lucide-react";
 import type { Meta, SummarySettings } from "../api";
-import { AI_PROVIDER_LABELS, FORMAT_ORDER, LANGUAGES, VIDEO_FORMATS, formatDuration } from "../format";
-import { FIT_OPTIONS, FORMAT_ICONS, ProviderPicker, providerReady } from "./Pickers";
+import { AI_PROVIDER_LABELS, FORMAT_ORDER, LANGUAGES, SUMMARY_FOCUS_PRESETS, VIDEO_FORMATS, formatDuration } from "../format";
+import { FIT_OPTIONS, FORMAT_ICONS, ProviderPicker, SubtitleToggle, VoicePicker, providerReady } from "./Pickers";
 
 type Set = (patch: Partial<SummarySettings>) => void;
 
@@ -11,17 +11,17 @@ const TARGET_PRESETS = [60, 180, 300, 600, 900, 1200];
 const MAX_SHARE = 0.95;
 const LANGUAGE_CODES = Object.keys(LANGUAGES);
 
-/** A first guess at the cut's length: about a sixth of the video, in whole minutes, from one to twenty. */
-export const suggestTarget = (sourceSec: number) => Math.min(1200, Math.max(60, Math.round(sourceSec / 6 / 60) * 60));
-
 /** What stops these settings from being run, as lines to show. */
 export function summaryProblems(s: SummarySettings, meta: Meta, sourceSec: number | null): string[] {
   const problems: string[] = [];
-  if (!(s.targetSec >= 30)) problems.push("Bản rút gọn dài ít nhất nửa phút");
-  else if (sourceSec && s.targetSec >= sourceSec * MAX_SHARE) problems.push(`Bản rút gọn phải ngắn hơn video gốc (${formatDuration(sourceSec)})`);
+  if (s.targetSec !== null && !(s.targetSec >= 30)) problems.push("Bản rút gọn dài ít nhất nửa phút");
+  else if (s.targetSec !== null && sourceSec && s.targetSec >= sourceSec * MAX_SHARE) {
+    problems.push(`Bản rút gọn phải ngắn hơn video gốc (${formatDuration(sourceSec)})`);
+  }
   if (!providerReady(meta, s.aiProvider)) {
     problems.push(s.aiProvider === "claude" ? "Claude Code chưa đăng nhập" : `Chưa có API key cho ${AI_PROVIDER_LABELS.gemini}`);
   }
+  if (!meta.voices.some((v) => v.id === s.voice)) problems.push(`Không có giọng ${s.voice.replace(/^olvroc:/, "")}, chọn giọng kể khác`);
   return problems;
 }
 
@@ -33,6 +33,10 @@ export function SummarySettingsForm({ value, set, meta, sourceSec }: {
       <div className="field">
         <div className="field-label"><Clock size={15} /> Độ dài bản rút gọn</div>
         <div className="seg-control target-control">
+          <button type="button" className={value.targetSec === null ? "on" : ""} onClick={() => set({ targetSec: null })}>
+            <b><Sparkles size={14} /> AI tự chọn</b>
+            <span>vừa đủ nội dung</span>
+          </button>
           {TARGET_PRESETS.map((sec) => (
             <button
               type="button" key={sec} className={value.targetSec === sec ? "on" : ""}
@@ -47,37 +51,48 @@ export function SummarySettingsForm({ value, set, meta, sourceSec }: {
           Hoặc nhập
           <input
             type="number" min={0.5} max={240} step={0.5} style={{ width: 90 }}
-            value={Number.isFinite(value.targetSec) ? value.targetSec / 60 : ""}
+            value={value.targetSec !== null && Number.isFinite(value.targetSec) ? value.targetSec / 60 : ""}
             onChange={(e) => set({ targetSec: Math.round(Number(e.target.value) * 60) })}
           />
           phút{sourceSec ? <span className="muted">· video gốc dài {formatDuration(sourceSec)}</span> : null}
         </label>
-        <div className="small muted">AI chọn các đoạn sao cho tổng độ dài gần mức này, đủ để người xem nắm hết nội dung.</div>
+        <div className="small muted">
+          {value.targetSec === null
+            ? "AI đọc hết nội dung rồi tự chọn độ dài vừa đủ để kể trọn mọi diễn biến hoặc ý chính (thường 1/10 đến 1/4 video gốc), kèm lý do trong kết quả."
+            : "AI chọn các đoạn hình và viết lời kể sao cho tổng độ dài gần mức này. Nếu mức này quá ngắn để kể đủ, kết quả sẽ gợi ý độ dài nên chọn."}
+        </div>
       </div>
 
-      <div className="summary-grid">
-        <label className="field">
-          <span className="field-label"><Languages size={15} /> Video nói tiếng gì</span>
-          <select value={value.language} onChange={(e) => set({ language: e.target.value })}>
-            <option value="">Tự nhận ngôn ngữ</option>
-            {LANGUAGE_CODES.map((c) => <option key={c} value={c}>{LANGUAGES[c]}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span className="field-label"><FileText size={15} /> Viết tóm tắt bằng</span>
-          <select value={value.summaryLanguage} onChange={(e) => set({ summaryLanguage: e.target.value })}>
-            {LANGUAGE_CODES.map((c) => <option key={c} value={c}>{LANGUAGES[c]}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span className="field-label"><Captions size={15} /> Phụ đề trên video</span>
-          <select value={value.subtitles} onChange={(e) => set({ subtitles: e.target.value })}>
-            <option value="none">Không chèn phụ đề</option>
-            <option value="source">Theo lời nói trong video</option>
-            {LANGUAGE_CODES.map((c) => <option key={c} value={c}>Dịch sang {LANGUAGES[c]}</option>)}
-          </select>
-        </label>
+      <div className="field">
+        <div className="field-label"><Target size={15} /> Trọng tâm tóm tắt</div>
+        <div className="seg-control">
+          <button type="button" className={value.focus.trim() === "" ? "on" : ""} onClick={() => set({ focus: "" })}>
+            <b>Kể trọn nội dung</b>
+            <span>đều mọi diễn biến</span>
+          </button>
+          {SUMMARY_FOCUS_PRESETS.map((p) => (
+            <button type="button" key={p.label} className={value.focus.trim() === p.text ? "on" : ""} onClick={() => set({ focus: p.text })}>
+              <b>{p.label}</b>
+              <span>{p.hint}</span>
+            </button>
+          ))}
+        </div>
+        <textarea
+          rows={4} maxLength={2000} value={value.focus} onChange={(e) => set({ focus: e.target.value })}
+          placeholder="Hoặc tự viết, ví dụ: chỉ giữ các trận đấu của nhân vật chính, bỏ qua tuyến truyện phụ…"
+        />
+        <div className="small muted">
+          AI ưu tiên yêu cầu này hơn cách tóm tắt thông thường khi chọn đoạn và viết lời kể. Có thể bấm một mẫu rồi sửa lại cho hợp với video.
+        </div>
       </div>
+
+      <label className="field">
+        <span className="field-label"><Languages size={15} /> Video nói tiếng gì</span>
+        <select value={value.language} onChange={(e) => set({ language: e.target.value })}>
+          <option value="">Tự nhận ngôn ngữ</option>
+          {LANGUAGE_CODES.map((c) => <option key={c} value={c}>{LANGUAGES[c]}</option>)}
+        </select>
+      </label>
 
       <label className={`switch-card ${value.useCaptions ? "on" : ""}`}>
         <Captions size={20} />
@@ -95,6 +110,13 @@ export function SummarySettingsForm({ value, set, meta, sourceSec }: {
           <div>Whisper chưa sẵn sàng ({meta.system.whisper.error}): chỉ tóm tắt được video có phụ đề. Chạy <code>pnpm setup:whisper</code> để nhận dạng giọng nói.</div>
         </div>
       )}
+
+      <div className="field-label"><Mic size={15} /> Giọng kể chuyện</div>
+      <div className="small muted">
+        Tiếng gốc của video được tắt. Người dẫn chuyện kể lại từng đoạn bằng tiếng Việt, theo ngôi thứ ba.
+      </div>
+      <VoicePicker value={value} set={set} meta={meta} />
+      <SubtitleToggle value={value} set={set} />
 
       <div className="field-label">Khung hình</div>
       <div className="choice-grid">
@@ -124,7 +146,7 @@ export function SummarySettingsForm({ value, set, meta, sourceSec }: {
         </div>
       )}
 
-      <ProviderPicker value={value} set={set} meta={meta} label="AI đọc nội dung và chọn đoạn" />
+      <ProviderPicker value={value} set={set} meta={meta} label="AI đọc nội dung, chọn đoạn và viết lời kể" />
     </>
   );
 }

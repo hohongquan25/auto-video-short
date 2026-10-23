@@ -2,15 +2,15 @@ import { useEffect, useState } from "react";
 import type { Job, JobSettings, Step, SummarySettings } from "./api";
 
 export const STEPS: Step[] = [
-  "download", "captions", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish", "upload", "summarize", "cut",
+  "download", "captions", "extract", "transcribe", "write", "rewrite", "review", "tts", "render", "publish", "upload", "summarize", "narrate", "cut",
 ];
 
 /** Steps that turn a recording into a script; a topic job's AI writes the script instead. */
 const MEDIA_STEPS: Step[] = ["download", "extract", "transcribe", "rewrite"];
 
 /** Steps of a summary job, and the ones only it has. */
-const SUMMARY_STEPS: Step[] = ["download", "captions", "extract", "transcribe", "summarize", "cut"];
-const SUMMARY_ONLY: Step[] = ["captions", "summarize", "cut"];
+const SUMMARY_STEPS: Step[] = ["download", "captions", "extract", "transcribe", "summarize", "narrate", "cut"];
+const SUMMARY_ONLY: Step[] = ["captions", "summarize", "narrate", "cut"];
 
 /** The steps shown for a job: "download" only exists for jobs created from a link. */
 export const jobSteps = (job: Job): Step[] => (job.kind === "summary" ? SUMMARY_STEPS : STEPS).filter((s) =>
@@ -84,7 +84,8 @@ export function stepForChange(job: Job, after: JobSettings): Step | null {
 /** Earliest step of a summary job whose output is invalidated by a settings change. */
 export function summaryStepForChange(before: SummarySettings, after: SummarySettings): Step | null {
   if (before.language !== after.language || before.useCaptions !== after.useCaptions) return "captions";
-  if (before.aiProvider !== after.aiProvider || before.targetSec !== after.targetSec || before.summaryLanguage !== after.summaryLanguage) return "summarize";
+  if (before.aiProvider !== after.aiProvider || before.targetSec !== after.targetSec || before.focus.trim() !== after.focus.trim()) return "summarize";
+  if (before.voice !== after.voice || before.rate !== after.rate) return "narrate";
   if (before.subtitles !== after.subtitles || before.format !== after.format || (after.format !== "original" && before.fit !== after.fit)) return "cut";
   return null;
 }
