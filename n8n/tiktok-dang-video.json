@@ -16,7 +16,7 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "5 7-23 * * *"
+              "expression": "5 7-23/2 * * *"
             }
           ]
         }
@@ -44,6 +44,34 @@
           "mode": "name"
         },
         "options": {}
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "1234d33a-7ecb-589f-b958-f22e7852bb37",
+      "name": "Đọc cài đặt",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        660,
+        300
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CaiDat",
+          "mode": "name"
+        },
+        "options": {}
       }
     },
     {
@@ -52,7 +80,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        1540,
+        1760,
         300
       ],
       "parameters": {
@@ -72,7 +100,7 @@
           "value": {
             "id": "={{ $('Lấy 1 video').first().json.id }}",
             "status": "posting",
-            "posted_at": "={{ $now.toISO() }}"
+            "posted_at": "={{ $('Lấy 1 video').first().json.lock }}"
           },
           "matchingColumns": [
             "id"
@@ -108,6 +136,67 @@
           ]
         },
         "options": {}
+      }
+    },
+    {
+      "id": "872bbcc9-8078-5e4b-b903-2757c7ee658c",
+      "name": "Chờ chốt khoá",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1980,
+        300
+      ],
+      "parameters": {
+        "amount": 3,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "a4caffc5-9742-59ab-a59a-787cb674aa9c",
+      "name": "Đọc lại dòng",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2200,
+        300
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1pMzhPKYOwWvMFCQJHxgJFCKnDepOzyMQeZ_qsiyoyrE/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Videos",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id",
+              "lookupValue": "={{ $('Lấy 1 video').first().json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "72354b31-a2f0-5b1f-8cce-1d0b90f492fd",
+      "name": "Còn giữ khoá?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Hai lượt cùng chọn một video (bấm hai lần liền, hoặc lịch chạy đúng lúc bấm): cả hai ghi khoá (posted_at) rồi đợi vài giây.\n// Lượt ghi sau cùng giữ video; lượt kia thấy khoá đã khác thì dừng, không gửi trùng.\n// Không đọc lại được dòng, hoặc posted_at không còn dạng ISO (Sheet tự đổi định dạng), thì không kiểm được: chạy tiếp như trước.\nconst me = $('Lấy 1 video').first().json;\nconst now = $input.all().map((i) => i.json).find((r) => String(r.id) === String(me.id));\nconst mine = DateTime.fromISO(String(me.lock ?? ''));\nconst seen = DateTime.fromISO(String(now?.posted_at ?? ''));\nif (now && mine.isValid && seen.isValid && seen.toMillis() !== mine.toMillis()) return [];\nreturn [{ json: me }];"
       }
     },
     {
@@ -157,7 +246,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        1760,
+        2640,
         300
       ],
       "parameters": {
@@ -189,7 +278,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1980,
+        2860,
         300
       ],
       "parameters": {
@@ -227,7 +316,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2200,
+        3080,
         300
       ],
       "parameters": {
@@ -241,7 +330,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        2420,
+        3300,
         300
       ],
       "parameters": {
@@ -305,7 +394,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2640,
+        3520,
         300
       ],
       "parameters": {
@@ -323,7 +412,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2860,
+        3740,
         300
       ],
       "parameters": {
@@ -337,7 +426,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3080,
+        3960,
         300
       ],
       "parameters": {
@@ -365,7 +454,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3300,
+        4180,
         300
       ],
       "parameters": {
@@ -379,7 +468,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        3520,
+        4400,
         300
       ],
       "parameters": {
@@ -393,7 +482,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3740,
+        4620,
         420
       ],
       "parameters": {
@@ -430,7 +519,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3960,
+        4840,
         420
       ],
       "parameters": {
@@ -465,7 +554,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        3740,
+        4620,
         160
       ],
       "parameters": {
@@ -479,7 +568,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4180,
+        5060,
         200
       ],
       "parameters": {
@@ -508,7 +597,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4400,
+        5280,
         200
       ],
       "parameters": {
@@ -522,7 +611,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        4840,
+        5720,
         200
       ],
       "parameters": {
@@ -596,7 +685,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        4840,
+        5720,
         560
       ],
       "parameters": {
@@ -660,7 +749,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        4620,
+        5500,
         200
       ],
       "parameters": {
@@ -694,11 +783,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5060,
+        5940,
         200
       ],
       "parameters": {
-        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst r = $('Lấy 1 video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst part = r.part ? ` · Phần ${r.part}/${r.total_parts}` : ' · Trọn bộ';\nconst s = $('Đánh giá').last().json;\nconst caption = String(r.post_description ?? '').trim();\nconst lines = caption.split('\\n');\nconst isTags = (l) => l.trim() && l.trim().split(/\\s+/).every((w) => w.startsWith('#'));\n// Dòng đầu của caption là tên video, các dòng toàn hashtag là phần hashtag.\nconst name = (lines[0] ?? '').trim() || `${r.title}${part}`;\nconst body = lines.slice(1).filter((l) => !isTags(l)).join('\\n').trim();\nconst tags = String(r.hashtags ?? '').trim() || lines.filter(isTags).join(' ');\nconst block = (label, text) => text ? [`${label} (chạm để copy):`, `<pre>${esc(text.slice(0, 1500))}</pre>`, ''] : [];\nconst sec = Math.round(Number(r.duration_sec) || 0);\nconst text = [\n  `🎬 <b>${esc(r.title)}</b>${part}`,\n  s.status === 'SEND_TO_USER_INBOX'\n    ? '✅ Đã vào hộp thư TikTok, mở app để đăng'\n    : `⏳ TikTok vẫn đang xử lý (${esc(s.status)}), vài phút nữa video sẽ vào hộp thư`,\n  `⏱ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`,\n  '',\n  ...block('📌 <b>Tên</b>', name),\n  ...block('📝 <b>Nội dung</b>', body),\n  ...block('#️⃣ <b>Hashtag</b>', tags),\n  ...block('📋 <b>Caption đầy đủ</b>, gồm cả 3 phần trên', caption),\n].join('\\n').trim();\nreturn [{ json: { payload: {\n  chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text, link_preview_options: { is_disabled: true },\n  reply_markup: { inline_keyboard: [[\n    { text: '✅ Đã đăng', callback_data: `posted|${r.id}` },\n    { text: '⏭ Bỏ qua', callback_data: `skip|${r.id}` },\n  ], [\n    { text: '⏩ Đã đăng, gửi tiếp', callback_data: `postnext|${r.id}` },\n  ]] },\n} } }];"
+        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst r = $('Lấy 1 video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n// Tên ngắn của truyện, như storyNameFromTitle của Story Studio: dòng đầu caption TikTok (\"Tên truyện | Phần 1/5\"),\n// hoặc tên rút từ tiêu đề khi caption cũ còn tiêu đề dài.\nconst TITLE_TAGS = /\\[[^\\]]*\\]|【[^】]*】|\\([^)]*\\)|#\\S*|\\b(cre|credit|nguồn|source)\\s*:.*$|\\d[\\d.,]*\\s*[kmb]?\\s*(views?|lượt xem|reactions?|likes?|lượt thích|comments?|bình luận|shares?)/giu;\nconst TITLE_SEPARATORS = /\\s+[-–—]\\s+|\\s*[|·•]\\s*|[:.]\\s+/u;\nconst TITLE_NOISE = /^(\\d+|full( bộ)?|trọn bộ|\\d+\\s*(phút|giờ|tiếng)|(tập|phần|part|ep)\\s*\\d+|.*\\b(audio|official|channel|radio|podcast)\\b.*|truyện (ngắn|audio|ma|hay|kể|kinh dị|ngôn tình|cổ tích|trinh thám)\\b.*)$/iu;\nconst nameFromTitle = (title) => {\n  const pieces = String(title ?? '').replace(TITLE_TAGS, ' ').split(TITLE_SEPARATORS).map((s) => s.replace(/[\"“”'‘’]/g, '').trim()).filter(Boolean);\n  return pieces.find((s) => !TITLE_NOISE.test(s)) ?? pieces.join(' ');\n};\nconst PART_SUFFIX = /\\s*(\\|\\s*Phần\\s*\\d+\\s*\\/\\s*\\d+|\\(trọn bộ\\))\\s*$/iu;\nconst NAME_MAX = 45;\n/** Tên ngắn của truyện của một dòng trong Sheet. Dòng YouTube không lấy caption (đó là mô tả YouTube). */\nconst shortName = (r) => {\n  const line = r.format === 'youtube' ? '' : String(r.post_description ?? '').split('\\n')[0].replace(PART_SUFFIX, '').trim();\n  for (const c of [line, nameFromTitle(line), nameFromTitle(r.post_title), nameFromTitle(r.title), String(r.title ?? '').trim()]) {\n    if (c && c.length <= NAME_MAX) return c;\n  }\n  const t = line || String(r.title || r.id || '');\n  return t.length > NAME_MAX ? `${t.slice(0, NAME_MAX - 1).replace(/\\s+\\S*$/, '')}…` : t;\n};\nconst s = $('Đánh giá').last().json;\n// Caption TikTok: tên ngắn của truyện kèm số phần, rồi tối đa 5 hashtag (TikTok chỉ nhận 5), không có đoạn mô tả.\nconst name = `${shortName(r)}${r.part ? ` | Phần ${r.part}/${r.total_parts}` : ' (trọn bộ)'}`;\nconst isTags = (l) => l.trim() && l.trim().split(/\\s+/).every((w) => w.startsWith('#'));\nconst tagLine = String(r.hashtags ?? '').trim() || String(r.post_description ?? '').split('\\n').filter(isTags).join(' ');\nconst tags = tagLine.split(/\\s+/).filter((t) => t.startsWith('#') && t.length > 1).slice(0, 5).join(' ');\nconst caption = [name, tags].filter(Boolean).join('\\n\\n');\nconst block = (label, text) => text ? [`${label} (chạm để copy):`, `<pre>${esc(text)}</pre>`, ''] : [];\nconst sec = Math.round(Number(r.duration_sec) || 0);\nconst text = [\n  `🎬 <b>${esc(shortName(r))}</b>${r.part ? ` · Phần ${r.part}/${r.total_parts}` : ' · Trọn bộ'}`,\n  s.status === 'SEND_TO_USER_INBOX'\n    ? '✅ Đã vào hộp thư TikTok, mở app để đăng'\n    : `⏳ TikTok vẫn đang xử lý (${esc(s.status)}), vài phút nữa video sẽ vào hộp thư`,\n  `⏱ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`,\n  '',\n  ...block('📌 <b>Tên</b>', name),\n  ...block('#️⃣ <b>Hashtag</b>', tags),\n  ...block('📋 <b>Caption đầy đủ</b>, gồm tên và hashtag', caption),\n].join('\\n').trim();\nreturn [{ json: { payload: {\n  chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text, link_preview_options: { is_disabled: true },\n  reply_markup: { inline_keyboard: [[\n    { text: '✅ Đã đăng', callback_data: `posted|${r.id}` },\n    { text: '⏭ Bỏ qua', callback_data: `skip|${r.id}` },\n  ], [\n    { text: '⏩ Đã đăng, gửi tiếp', callback_data: `postnext|${r.id}` },\n  ]] },\n} } }];"
       }
     },
     {
@@ -707,11 +796,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5060,
+        5940,
         560
       ],
       "parameters": {
-        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst r = $('Lấy 1 video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst part = r.part ? ` · Phần ${r.part}/${r.total_parts}` : ' · Trọn bộ';\nconst msg = String($input.first().json.note ?? '').slice(0, 1000);\nconst text = [\n  '❌ <b>Không gửi được video vào TikTok</b>',\n  `🎬 ${esc(r.title)}${part}`,\n  '',\n  `<pre>${esc(msg || 'Lỗi không rõ, xem cột note trong Sheet')}</pre>`,\n  'Sửa xong thì đổi status trong Sheet về pending để gửi lại.',\n].join('\\n');\nreturn [{ json: { payload: { chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text } } }];"
+        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst r = $('Lấy 1 video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n// Tên ngắn của truyện, như storyNameFromTitle của Story Studio: dòng đầu caption TikTok (\"Tên truyện | Phần 1/5\"),\n// hoặc tên rút từ tiêu đề khi caption cũ còn tiêu đề dài.\nconst TITLE_TAGS = /\\[[^\\]]*\\]|【[^】]*】|\\([^)]*\\)|#\\S*|\\b(cre|credit|nguồn|source)\\s*:.*$|\\d[\\d.,]*\\s*[kmb]?\\s*(views?|lượt xem|reactions?|likes?|lượt thích|comments?|bình luận|shares?)/giu;\nconst TITLE_SEPARATORS = /\\s+[-–—]\\s+|\\s*[|·•]\\s*|[:.]\\s+/u;\nconst TITLE_NOISE = /^(\\d+|full( bộ)?|trọn bộ|\\d+\\s*(phút|giờ|tiếng)|(tập|phần|part|ep)\\s*\\d+|.*\\b(audio|official|channel|radio|podcast)\\b.*|truyện (ngắn|audio|ma|hay|kể|kinh dị|ngôn tình|cổ tích|trinh thám)\\b.*)$/iu;\nconst nameFromTitle = (title) => {\n  const pieces = String(title ?? '').replace(TITLE_TAGS, ' ').split(TITLE_SEPARATORS).map((s) => s.replace(/[\"“”'‘’]/g, '').trim()).filter(Boolean);\n  return pieces.find((s) => !TITLE_NOISE.test(s)) ?? pieces.join(' ');\n};\nconst PART_SUFFIX = /\\s*(\\|\\s*Phần\\s*\\d+\\s*\\/\\s*\\d+|\\(trọn bộ\\))\\s*$/iu;\nconst NAME_MAX = 45;\n/** Tên ngắn của truyện của một dòng trong Sheet. Dòng YouTube không lấy caption (đó là mô tả YouTube). */\nconst shortName = (r) => {\n  const line = r.format === 'youtube' ? '' : String(r.post_description ?? '').split('\\n')[0].replace(PART_SUFFIX, '').trim();\n  for (const c of [line, nameFromTitle(line), nameFromTitle(r.post_title), nameFromTitle(r.title), String(r.title ?? '').trim()]) {\n    if (c && c.length <= NAME_MAX) return c;\n  }\n  const t = line || String(r.title || r.id || '');\n  return t.length > NAME_MAX ? `${t.slice(0, NAME_MAX - 1).replace(/\\s+\\S*$/, '')}…` : t;\n};\nconst part = r.part ? ` · Phần ${r.part}/${r.total_parts}` : ' · Trọn bộ';\nconst msg = String($input.first().json.note ?? '').slice(0, 1000);\nconst text = [\n  '❌ <b>Không gửi được video vào TikTok</b>',\n  `🎬 ${esc(shortName(r))}${part}`,\n  '',\n  `<pre>${esc(msg || 'Lỗi không rõ, xem cột note trong Sheet')}</pre>`,\n  'Sửa xong bấm 🔁 Gửi lại: video quay về hàng chờ của truyện.',\n].join('\\n');\n// Nút do trang quản lý Telegram xử lý.\nreturn [{ json: { payload: { chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text, reply_markup: { inline_keyboard: [[\n  { text: '🔁 Gửi lại', callback_data: `msg|retry|${r.id}` },\n  { text: '⏭ Bỏ qua', callback_data: `msg|skip|${r.id}` },\n]] } } } }];"
       },
       "executeOnce": true
     },
@@ -721,7 +810,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        5280,
+        6160,
         380
       ],
       "parameters": {
@@ -750,11 +839,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        660,
+        880,
         300
       ],
       "parameters": {
-        "jsCode": "// Đăng mọi video chưa đăng, kể cả video ngày trước chưa kịp đăng: truyện cũ trước, trong mỗi truyện theo thứ tự phần.\n// Video trọn bộ gửi sau cùng, khi mọi phần của truyện đó đã đăng hoặc bỏ qua.\n// Còn video gửi hôm nay nằm trong hộp thư chưa đăng thì chờ; quá 3 giờ thì nhắc đúng 1 lần.\n// Video gửi vào hộp thư từ ngày trước (tin Telegram đã bị dọn lúc 0h) không chặn nữa.\n// Bấm ⏩ trong Telegram thì chạy ngay, không đợi lịch; không gửi được thì nhắn lý do.\nconst force = $('Gửi tiếp từ Telegram').isExecuted;\nconst rows = $input.all().map((i) => i.json);\nconst today = $now.toISODate();\nconst dayOf = (v) => DateTime.fromISO(String(v ?? '')).setZone('Asia/Ho_Chi_Minh').toISODate();\nconst mine = rows.filter((r) => r.format === 'tiktok' || r.format === 'original');\nconst rank = (r) => (r.kind === 'full' ? Infinity : Number(r.part || 0));\nconst order = (a, b) => String(a.job_id).localeCompare(String(b.job_id)) || rank(a) - rank(b);\nconst due = (r) => !r.scheduled_at || DateTime.fromISO(String(r.scheduled_at)) <= $now;\nconst label = (r) => `${r.title}${r.part ? ` · Phần ${r.part}/${r.total_parts}` : r.kind === 'full' ? ' · Trọn bộ' : ''}`;\n// Bản trọn bộ chờ tới khi không còn phần nào của truyện chưa đăng (đang chờ, đang gửi, nằm trong hộp thư).\nconst partsLeft = (r) => mine.some((p) => p.job_id === r.job_id && p.kind !== 'full' && ['pending', 'posting', 'inbox'].includes(p.status));\nconst ready = (r) => due(r) && (r.kind !== 'full' || !partsLeft(r));\nconst info = (text) => (force ? [{ json: { mode: 'info', text } }] : []);\n// Video đang gửi dở (khoá chưa quá 30 phút) thì không gửi chồng.\nconst sending = mine.find((r) => r.status === 'posting' && $now.diff(DateTime.fromISO(String(r.posted_at ?? '')), 'minutes').minutes < 30);\nif (sending) return info(`⏳ Đang gửi ${label(sending)} vào TikTok, vài phút nữa sẽ có tin báo.`);\nconst pending = mine.filter((r) => r.status === 'pending').sort(order);\nconst next = pending.find(ready) ?? null;\nconst waiting = mine.filter((r) => r.status === 'inbox' && dayOf(r.posted_at) === today).sort(order);\nif (waiting.length) {\n  const w = waiting[0];\n  if (force) return info(`📥 ${label(w)} vẫn nằm trong hộp thư TikTok. Đăng xong bấm \"⏩ Đã đăng, gửi tiếp\" để nhận video kế tiếp.`);\n  const sent = DateTime.fromISO(String(w.posted_at ?? ''));\n  const late = !sent.isValid || $now.diff(sent, 'hours').hours >= 3;\n  if (!late || String(w.note ?? '').includes('Đã nhắc')) return [];\n  return [{ json: { mode: 'remind', waiting: w, waitingCount: waiting.length, row: next } }];\n}\nif (next) return [{ json: { mode: 'send', row: next } }];\nconst later = pending.find((r) => !due(r));\nif (later) return info(`🕒 Video tiếp theo (${label(later)}) hẹn gửi lúc ${DateTime.fromISO(String(later.scheduled_at)).setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm dd/MM')}.`);\nconst held = pending[0];\nreturn info(held\n  ? `📥 ${label(held)} sẽ gửi khi các phần của truyện này đã đăng hết (còn phần nằm trong hộp thư TikTok).`\n  : '📭 Hết video để gửi.');"
+        "jsCode": "// Chỉ gửi TikTok của các truyện đã bấm \"Bắt đầu TikTok\" trong trang quản lý Telegram (tab CaiDat: tiktok:<job_id> = on);\n// truyện đã gửi TikTok từ trước khi có nút này coi như đã bắt đầu, bấm Dừng (off) thì thôi. Truyện cũ trước, trong mỗi truyện theo thứ tự phần.\n// Video trọn bộ gửi sau cùng, khi mọi phần của truyện đó đã đăng hoặc bỏ qua.\n// Còn video gửi hôm nay nằm trong hộp thư chưa đăng thì chờ; quá 3 giờ thì nhắc đúng 1 lần.\n// Video gửi vào hộp thư từ ngày trước (tin Telegram đã bị dọn lúc 0h) không chặn nữa.\n// Bấm ⏩ trong Telegram thì chạy ngay, không đợi lịch; bấm từ màn hình một truyện (job_id) thì gửi phần kế tiếp của truyện đó.\n// Không gửi được thì nhắn lý do. Lịch tạm dừng (tiktok_auto = off) thì lượt theo lịch không gửi, không nhắc; nút ⏩ vẫn gửi.\nconst force = $('Gửi tiếp từ Telegram').isExecuted;\nconst want = force ? String($('Gửi tiếp từ Telegram').first().json.job_id ?? '') : '';\nconst rows = $('Đọc Sheet').all().map((i) => i.json);\nconst flags = {};\nfor (const f of $('Đọc cài đặt').all().map((i) => i.json)) if (f.key) flags[f.key] = String(f.value ?? '');\n// Tab CaiDat chưa có thì mọi thứ để mặc định; đọc lỗi kiểu khác thì không đoán truyện nào đang chạy hay lịch có tạm dừng không.\nconst errorText = (e) => (typeof e === 'string' ? e : e?.message ?? JSON.stringify(e));\nconst flagError = $('Đọc cài đặt').all().map((i) => i.json.error).find((e) => e && !/not found|unable to parse range/i.test(errorText(e)));\nif (flagError) return force ? [{ json: { mode: 'info', text: '⚠️ Không đọc được tab CaiDat của Google Sheet, thử lại sau ít phút.' } }] : [];\nif (flags.tiktok_auto === 'off' && !force) return [];\n// Tên ngắn của truyện, như storyNameFromTitle của Story Studio: dòng đầu caption TikTok (\"Tên truyện | Phần 1/5\"),\n// hoặc tên rút từ tiêu đề khi caption cũ còn tiêu đề dài.\nconst TITLE_TAGS = /\\[[^\\]]*\\]|【[^】]*】|\\([^)]*\\)|#\\S*|\\b(cre|credit|nguồn|source)\\s*:.*$|\\d[\\d.,]*\\s*[kmb]?\\s*(views?|lượt xem|reactions?|likes?|lượt thích|comments?|bình luận|shares?)/giu;\nconst TITLE_SEPARATORS = /\\s+[-–—]\\s+|\\s*[|·•]\\s*|[:.]\\s+/u;\nconst TITLE_NOISE = /^(\\d+|full( bộ)?|trọn bộ|\\d+\\s*(phút|giờ|tiếng)|(tập|phần|part|ep)\\s*\\d+|.*\\b(audio|official|channel|radio|podcast)\\b.*|truyện (ngắn|audio|ma|hay|kể|kinh dị|ngôn tình|cổ tích|trinh thám)\\b.*)$/iu;\nconst nameFromTitle = (title) => {\n  const pieces = String(title ?? '').replace(TITLE_TAGS, ' ').split(TITLE_SEPARATORS).map((s) => s.replace(/[\"“”'‘’]/g, '').trim()).filter(Boolean);\n  return pieces.find((s) => !TITLE_NOISE.test(s)) ?? pieces.join(' ');\n};\nconst PART_SUFFIX = /\\s*(\\|\\s*Phần\\s*\\d+\\s*\\/\\s*\\d+|\\(trọn bộ\\))\\s*$/iu;\nconst NAME_MAX = 45;\n/** Tên ngắn của truyện của một dòng trong Sheet. Dòng YouTube không lấy caption (đó là mô tả YouTube). */\nconst shortName = (r) => {\n  const line = r.format === 'youtube' ? '' : String(r.post_description ?? '').split('\\n')[0].replace(PART_SUFFIX, '').trim();\n  for (const c of [line, nameFromTitle(line), nameFromTitle(r.post_title), nameFromTitle(r.title), String(r.title ?? '').trim()]) {\n    if (c && c.length <= NAME_MAX) return c;\n  }\n  const t = line || String(r.title || r.id || '');\n  return t.length > NAME_MAX ? `${t.slice(0, NAME_MAX - 1).replace(/\\s+\\S*$/, '')}…` : t;\n};\nconst today = $now.toISODate();\nconst dayOf = (v) => DateTime.fromISO(String(v ?? '')).setZone('Asia/Ho_Chi_Minh').toISODate();\nconst mine = rows.filter((r) => r.format === 'tiktok' || r.format === 'original');\nconst rank = (r) => (r.kind === 'full' ? Infinity : Number(r.part || 0));\nconst order = (a, b) => String(a.job_id).localeCompare(String(b.job_id)) || rank(a) - rank(b);\nconst due = (r) => !r.scheduled_at || DateTime.fromISO(String(r.scheduled_at)) <= $now;\nconst label = (r) => `${shortName(r)}${r.part ? ` · Phần ${r.part}/${r.total_parts}` : r.kind === 'full' ? ' · Trọn bộ' : ''}`;\nconst started = (job) => flags[`tiktok:${job}`] === 'on'\n  || (flags[`tiktok:${job}`] !== 'off' && mine.some((p) => p.job_id === job && ['inbox', 'posted', 'posting', 'skipped'].includes(p.status)));\n// Bản trọn bộ chờ tới khi không còn phần nào của truyện chưa đăng (đang chờ, đang gửi, nằm trong hộp thư, đang lỗi).\nconst partsLeft = (r) => mine.some((p) => p.job_id === r.job_id && p.kind !== 'full' && ['pending', 'posting', 'inbox', 'error'].includes(p.status));\nconst ready = (r) => started(r.job_id) && due(r) && (r.kind !== 'full' || !partsLeft(r));\nconst info = (text) => (force ? [{ json: { mode: 'info', text } }] : []);\n// Video đang gửi dở (khoá chưa quá 30 phút) thì không gửi chồng.\nconst sending = mine.find((r) => r.status === 'posting' && $now.diff(DateTime.fromISO(String(r.posted_at ?? '')), 'minutes').minutes < 30);\nif (sending) return info(`⏳ Đang gửi ${label(sending)} vào TikTok, vài phút nữa sẽ có tin báo.`);\nconst pending = mine.filter((r) => r.status === 'pending').sort(order);\nconst scope = want ? pending.filter((r) => r.job_id === want) : pending;\nconst next = scope.find(ready) ?? null;\nconst waiting = mine.filter((r) => r.status === 'inbox' && dayOf(r.posted_at) === today).sort(order);\nif (waiting.length) {\n  const w = waiting[0];\n  if (force) return info(`📥 ${label(w)} vẫn nằm trong hộp thư TikTok. Đăng xong bấm \"⏩ Đã đăng, gửi tiếp\" để nhận video kế tiếp.`);\n  const sent = DateTime.fromISO(String(w.posted_at ?? ''));\n  const late = !sent.isValid || $now.diff(sent, 'hours').hours >= 3;\n  if (!late || String(w.note ?? '').includes('Đã nhắc')) return [];\n  return [{ json: { mode: 'remind', waiting: w, waitingCount: waiting.length, row: next } }];\n}\nif (next) return [{ json: { mode: 'send', row: next } }];\nif (!scope.length) return info(want ? '📭 Truyện này hết video TikTok chờ gửi.' : '📭 Hết video để gửi.');\nconst live = scope.filter((r) => started(r.job_id));\nif (!live.length) {\n  return info(want\n    ? '🎵 TikTok của truyện này chưa bắt đầu: bấm Bắt đầu TikTok trong màn hình truyện.'\n    : '🎵 Chưa có truyện nào đang chạy TikTok: mở 📚 Bộ truyện, chọn truyện rồi bấm Bắt đầu TikTok.');\n}\nconst later = live.find((r) => !due(r));\nif (later) return info(`🕒 Video tiếp theo (${label(later)}) hẹn gửi lúc ${DateTime.fromISO(String(later.scheduled_at)).setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm dd/MM')}.`);\nreturn info(`📥 ${label(live[0])} sẽ gửi khi các phần của truyện này đã đăng hết (còn phần nằm trong hộp thư TikTok, hoặc phần lỗi chưa gửi lại hay bỏ qua).`);"
       }
     },
     {
@@ -763,7 +852,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        880,
+        1100,
         300
       ],
       "parameters": {
@@ -796,11 +885,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1540,
+        1760,
         120
       ],
       "parameters": {
-        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst { waiting: w, waitingCount, row } = $('Chọn video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst label = (r) => `${esc(r.title)}${r.part ? ` · Phần ${r.part}/${r.total_parts}` : r.kind === 'full' ? ' · Trọn bộ' : ''}`;\nconst sent = DateTime.fromISO(String(w.posted_at ?? ''));\nconst text = [\n  '⏰ <b>Nhắc đăng</b>: video này nằm trong hộp thư TikTok hơn 3 giờ rồi',\n  `🎬 ${label(w)}${sent.isValid ? ` (gửi lúc ${sent.setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm')})` : ''}`,\n  waitingCount > 1 ? `Còn ${waitingCount} video trong hộp thư chưa đăng.` : null,\n  row ? `\\nĐang chờ gửi tiếp: ${label(row)}` : null,\n  '\\nĐăng xong thì bấm ✅ Đã đăng (ở đây hoặc ở tin trước). Bấm ⏩ để nhận video kế tiếp ngay.',\n].filter((l) => l !== null).join('\\n');\nreturn [{ json: { payload: {\n  chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text,\n  reply_markup: { inline_keyboard: [[\n    { text: '✅ Đã đăng', callback_data: `posted|${w.id}` },\n    { text: '⏭ Bỏ qua', callback_data: `skip|${w.id}` },\n  ], [\n    { text: '⏩ Đã đăng, gửi tiếp', callback_data: `postnext|${w.id}` },\n  ]] },\n} } }];"
+        "jsCode": "const cfg = $('Cấu hình TikTok').first().json;\n// Chưa điền bot Telegram thì bỏ qua bước nhắn tin.\nif (!cfg.telegram_bot_token || cfg.telegram_bot_token.startsWith('DAN_')) return [];\nconst { waiting: w, waitingCount, row } = $('Chọn video').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n// Tên ngắn của truyện, như storyNameFromTitle của Story Studio: dòng đầu caption TikTok (\"Tên truyện | Phần 1/5\"),\n// hoặc tên rút từ tiêu đề khi caption cũ còn tiêu đề dài.\nconst TITLE_TAGS = /\\[[^\\]]*\\]|【[^】]*】|\\([^)]*\\)|#\\S*|\\b(cre|credit|nguồn|source)\\s*:.*$|\\d[\\d.,]*\\s*[kmb]?\\s*(views?|lượt xem|reactions?|likes?|lượt thích|comments?|bình luận|shares?)/giu;\nconst TITLE_SEPARATORS = /\\s+[-–—]\\s+|\\s*[|·•]\\s*|[:.]\\s+/u;\nconst TITLE_NOISE = /^(\\d+|full( bộ)?|trọn bộ|\\d+\\s*(phút|giờ|tiếng)|(tập|phần|part|ep)\\s*\\d+|.*\\b(audio|official|channel|radio|podcast)\\b.*|truyện (ngắn|audio|ma|hay|kể|kinh dị|ngôn tình|cổ tích|trinh thám)\\b.*)$/iu;\nconst nameFromTitle = (title) => {\n  const pieces = String(title ?? '').replace(TITLE_TAGS, ' ').split(TITLE_SEPARATORS).map((s) => s.replace(/[\"“”'‘’]/g, '').trim()).filter(Boolean);\n  return pieces.find((s) => !TITLE_NOISE.test(s)) ?? pieces.join(' ');\n};\nconst PART_SUFFIX = /\\s*(\\|\\s*Phần\\s*\\d+\\s*\\/\\s*\\d+|\\(trọn bộ\\))\\s*$/iu;\nconst NAME_MAX = 45;\n/** Tên ngắn của truyện của một dòng trong Sheet. Dòng YouTube không lấy caption (đó là mô tả YouTube). */\nconst shortName = (r) => {\n  const line = r.format === 'youtube' ? '' : String(r.post_description ?? '').split('\\n')[0].replace(PART_SUFFIX, '').trim();\n  for (const c of [line, nameFromTitle(line), nameFromTitle(r.post_title), nameFromTitle(r.title), String(r.title ?? '').trim()]) {\n    if (c && c.length <= NAME_MAX) return c;\n  }\n  const t = line || String(r.title || r.id || '');\n  return t.length > NAME_MAX ? `${t.slice(0, NAME_MAX - 1).replace(/\\s+\\S*$/, '')}…` : t;\n};\nconst label = (r) => `${esc(shortName(r))}${r.part ? ` · Phần ${r.part}/${r.total_parts}` : r.kind === 'full' ? ' · Trọn bộ' : ''}`;\nconst sent = DateTime.fromISO(String(w.posted_at ?? ''));\nconst text = [\n  '⏰ <b>Nhắc đăng</b>: video này nằm trong hộp thư TikTok hơn 3 giờ rồi',\n  `🎬 ${label(w)}${sent.isValid ? ` (gửi lúc ${sent.setZone('Asia/Ho_Chi_Minh').toFormat('HH:mm')})` : ''}`,\n  waitingCount > 1 ? `Còn ${waitingCount} video trong hộp thư chưa đăng.` : null,\n  row ? `\\nĐang chờ gửi tiếp: ${label(row)}` : null,\n  '\\nĐăng xong thì bấm ✅ Đã đăng (ở đây hoặc ở tin trước). Bấm ⏩ để nhận video kế tiếp ngay.',\n].filter((l) => l !== null).join('\\n');\nreturn [{ json: { payload: {\n  chat_id: cfg.telegram_chat_id, parse_mode: 'HTML', text,\n  reply_markup: { inline_keyboard: [[\n    { text: '✅ Đã đăng', callback_data: `posted|${w.id}` },\n    { text: '⏭ Bỏ qua', callback_data: `skip|${w.id}` },\n  ], [\n    { text: '⏩ Đã đăng, gửi tiếp', callback_data: `postnext|${w.id}` },\n  ]] },\n} } }];"
       }
     },
     {
@@ -809,11 +898,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1320,
+        1540,
         300
       ],
       "parameters": {
-        "jsCode": "return [{ json: $input.first().json.row }];"
+        "jsCode": "return [{ json: { ...$input.first().json.row, lock: $now.toISO() } }];"
       }
     },
     {
@@ -822,7 +911,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        1320,
+        1540,
         120
       ],
       "parameters": {
@@ -876,7 +965,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        5500,
+        6380,
         380
       ],
       "parameters": {
@@ -953,7 +1042,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1100,
+        1320,
         300
       ],
       "parameters": {
@@ -986,7 +1075,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1320,
+        1540,
         500
       ],
       "parameters": {
@@ -1010,7 +1099,7 @@
       "main": [
         [
           {
-            "node": "Đọc token TikTok",
+            "node": "Chờ chốt khoá",
             "type": "main",
             "index": 0
           }
@@ -1336,7 +1425,7 @@
       "main": [
         [
           {
-            "node": "Chọn video",
+            "node": "Đọc cài đặt",
             "type": "main",
             "index": 0
           }
@@ -1450,6 +1539,50 @@
         [
           {
             "node": "Gửi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc cài đặt": {
+      "main": [
+        [
+          {
+            "node": "Chọn video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chờ chốt khoá": {
+      "main": [
+        [
+          {
+            "node": "Đọc lại dòng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đọc lại dòng": {
+      "main": [
+        [
+          {
+            "node": "Còn giữ khoá?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Còn giữ khoá?": {
+      "main": [
+        [
+          {
+            "node": "Đọc token TikTok",
             "type": "main",
             "index": 0
           }

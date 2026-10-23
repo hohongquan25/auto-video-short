@@ -20,7 +20,8 @@ Các workflow hiện tại chỉ chạy theo lịch, không cần internet gọi
   ```
 
   Kết nối lại Google vẫn dùng được, vì địa chỉ nhận mã vẫn là `http://localhost:5678/rest/oauth2-credential/callback` như lúc chạy trên máy.
-- Không dùng được: mở n8n từ điện thoại, Webhook / Telegram Trigger, `WEBHOOK_URL` của Story Studio. Khi cần mấy thứ này thì chuyển sang bản có tên miền, dữ liệu giữ nguyên.
+- Không dùng được: mở n8n từ điện thoại, Webhook / Telegram Trigger (nên không có trang quản lý Telegram), `WEBHOOK_URL` của Story Studio. Khi cần mấy thứ này thì chuyển sang bản có tên miền, dữ liệu giữ nguyên.
+- Không có trang quản lý thì các nút dưới tin Telegram không làm gì, và TikTok không gửi truyện mới: chỉ trang quản lý ghi được dòng `tiktok:<job_id> | on` (Bắt đầu TikTok) vào tab `CaiDat`. Muốn chạy tay thì tự thêm dòng đó vào Sheet.
 
 ## 2. Cài trên VPS
 
@@ -72,7 +73,7 @@ Cách này chép nguyên thư mục dữ liệu, gồm tài khoản đăng nhậ
 
    `N8N_VERSION` trong `.env` phải bằng hoặc mới hơn bản trên máy, vì n8n không chạy được dữ liệu của bản mới hơn nó.
 
-3. Mở `https://<N8N_DOMAIN>`, đăng nhập bằng tài khoản cũ, kiểm tra các workflow đang bật (TikTok gửi video, Telegram nhận nút bấm, Telegram dọn tin).
+3. Mở `https://<N8N_DOMAIN>`, đăng nhập bằng tài khoản cũ, kiểm tra các workflow đang bật (TikTok gửi video, Telegram trang quản lý, Telegram dọn tin).
 
 4. Trong [Google Cloud Console](https://console.cloud.google.com/apis/credentials), mở OAuth client mà n8n dùng và thêm **Authorized redirect URI** `https://<N8N_DOMAIN>/rest/oauth2-credential/callback`. Kết nối hiện có vẫn chạy mà không cần bước này; chỉ khi bấm kết nối lại Google trong n8n thì mới cần.
 
@@ -90,3 +91,34 @@ Kết nối TikTok không đổi gì: token nằm trong tab `TikTokAuth` của S
 | Dọn ổ đĩa | `/opt/n8n/don-dep.sh` (chép từ `don-dep.sh`): xoá khúc video tạm của các lượt đã chạy xong (video gốc vẫn ở Drive) và thu gọn log hệ thống. Cron `/etc/cron.d/n8n-don-dep` chạy nó lúc 3h sáng mỗi 3 ngày: `0 3 */3 * * root /opt/n8n/don-dep.sh >> /var/log/n8n-don-dep.log 2>&1` |
 
 Workflow cũ `Video kể chuyện tự động` (trong `F:\n8n`) cần ffmpeg và node Execute Command. Story Studio đã thay nó nên bộ cài này không kèm ffmpeg. Nếu vẫn cần, dùng lại `F:\n8n\Dockerfile` và thêm `NODES_EXCLUDE=[]`.
+
+## 5. Cập nhật workflow
+
+File workflow trong repo để chữ `DAN_...` thay cho khoá bí mật (bot token, chat id, khoá TikTok) và không gắn credential. `cap-nhat.sh` lấy những thứ đó từ bản đang chạy trên VPS nên không phải điền tay:
+
+1. Sao lưu mọi workflow đang chạy vào `/opt/n8n/backup-<ngày giờ>/`.
+2. Ghép bản trong repo với khoá bí mật và credential đang dùng (`ghep-workflow.mjs`, chạy trong container n8n). Node mới được gắn credential cùng loại khi n8n chỉ có một cái; trang quản lý Telegram chưa có credential Telegram thì tạo từ bot token đang dùng.
+3. Nhập vào n8n; bật trang quản lý và tắt workflow `Telegram - Nhận nút bấm` cũ; workflow YouTube được bật khi đủ credential; workflow khác giữ bật/tắt như trước.
+4. Khởi động lại n8n và in webhook Telegram đang trỏ về đâu.
+
+Chạy trên máy Windows, ở thư mục gốc repo:
+
+```powershell
+ssh root@<IP> mkdir -p /opt/n8n/cap-nhat
+scp n8n/telegram-quan-ly.json n8n/tiktok-dang-video.json n8n/youtube-dang-video.json n8n/vps/ghep-workflow.mjs n8n/vps/cap-nhat.sh root@<IP>:/opt/n8n/cap-nhat/
+ssh root@<IP> sh /opt/n8n/cap-nhat/cap-nhat.sh
+```
+
+Nếu bản đang chạy có hai giá trị khác nhau cho cùng một khoá (ví dụ hai bot token), script dừng trước khi nhập, không đổi gì.
+
+**Quay lại bản cũ**: nhập lại các file trong thư mục sao lưu rồi bật lại như trước, ví dụ:
+
+```bash
+cd /opt/n8n
+B=/opt/n8n/backup-<ngày giờ>/live
+for f in $B/ss*.json; do docker compose cp "$f" n8n:/tmp/; docker compose exec -T -u node n8n n8n import:workflow --input=/tmp/$(basename $f); done
+docker compose exec -T -u node n8n n8n unpublish:workflow --id=ssTeleQuanLy0001
+docker compose exec -T -u node n8n n8n publish:workflow --id=ssTeleNutBam0001
+docker compose exec -T -u node n8n n8n publish:workflow --id=ssTikTokDangVid1
+docker compose restart n8n
+```
