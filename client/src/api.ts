@@ -75,6 +75,7 @@ export const api = {
   rerun: (id: string, fromStep?: Step, settings?: JobSettings) =>
     request<Job>("POST", `/api/jobs/${id}/rerun`, { fromStep, settings }),
   stop: (id: string) => request<Job>("POST", `/api/jobs/${id}/stop`),
+  redrawYoutubeCovers: (id: string) => request<Job>("POST", `/api/jobs/${id}/youtube-covers`),
   renameJob: (id: string, title: string) => request<Job>("PATCH", `/api/jobs/${id}`, { title }),
   deleteJob: (id: string) => request<void>("DELETE", `/api/jobs/${id}`),
 
@@ -95,6 +96,8 @@ export const api = {
   saveDefaults: (defaults: DefaultSettings) => request<DefaultSettings>("PUT", "/api/defaults", defaults),
   summaryDefaults: () => request<SummarySettings>("GET", "/api/summary-defaults"),
   saveSummaryDefaults: (defaults: SummarySettings) => request<SummarySettings>("PUT", "/api/summary-defaults", defaults),
+  numbering: () => request<{ tag: string; next: number }>("GET", "/api/numbering"),
+  saveNumbering: (n: { tag: string; next: number }) => request<{ tag: string; next: number }>("PUT", "/api/numbering", n),
 
   brand: () => request<Brand>("GET", "/api/brand"),
   saveBrand: (brand: Brand) => request<Brand>("PUT", "/api/brand", brand),

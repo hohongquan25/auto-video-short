@@ -1,5 +1,5 @@
 import { rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { config } from "../config.js";
 import { RECOLOR, type BackgroundLook, type FitMode } from "../types.js";
 import { run } from "./proc.js";
@@ -139,13 +139,18 @@ export const OUTPUT_FPS = 30;
 /**
  * An .ass file goes into the filter graph, which treats colons and
  * backslashes as syntax and Windows paths are full of both, so ffmpeg must
- * run in the subtitle's folder (`cwd`) and gets just the file name.
+ * run in the subtitle's folder (`cwd`) and gets just the file name. Fonts
+ * that are not installed come from `fontsDir`, given by its path from there.
  */
-function subtitleFilter(subtitles?: string): { filter: string | null; cwd?: string } {
+function subtitleFilter(subtitles?: string, fontsDir?: string): { filter: string | null; cwd?: string } {
   if (!subtitles) return { filter: null };
   const name = basename(subtitles);
   if (!/^[\w.-]+$/.test(name)) throw new Error(`Unsafe subtitle file name: ${name}`);
-  return { filter: `ass=${name}`, cwd: dirname(subtitles) };
+  const cwd = dirname(subtitles);
+  // A folder on another drive has no path from there but its own, colon and all, which is escaped.
+  const fonts = fontsDir ? relative(cwd, fontsDir).replace(/\\/g, "/") : "";
+  if (fonts && !/^([a-z]:)?[\w ./-]+$/i.test(fonts)) throw new Error(`Unsafe fonts folder: ${fonts}`);
+  return { filter: `ass=${name}${fonts ? `:fontsdir='${fonts.replace(":", "\\:")}'` : ""}`, cwd };
 }
 
 /** A stretch of one background file, in the file's own seconds, and how it is altered. */
@@ -224,6 +229,34 @@ export async function stillFrame(
     "-y",
     "-ss", atSec.toFixed(2), "-i", resolve(background),
     "-vf", filters,
+    "-frames:v", "1", "-q:v", "2",
+    resolve(outFile),
+  ], { totalSec: null, signal }, cwd);
+}
+
+/**
+ * A JPG on a white page: `picture` cropped to fill the left `pictureWidth`,
+ * its right `fadeWidth` fading into the page so it has no edge, and the
+ * subtitles drawn over both in the fonts of `fontsDir`.
+ */
+export async function pictureCover(
+  picture: string, outFile: string,
+  opts: { width: number; height: number; pictureWidth: number; fadeWidth: number; subtitles: string; fontsDir: string }, signal?: AbortSignal,
+): Promise<void> {
+  const { width, height, pictureWidth: w, fadeWidth } = opts;
+  const { filter, cwd } = subtitleFilter(opts.subtitles, opts.fontsDir);
+  // Opaque to clear along a smoothstep, which shows no line where the fade starts.
+  const alpha = `st(0,clip((W-1-X)/${Math.round(fadeWidth)},0,1));255*ld(0)*ld(0)*(3-2*ld(0))`;
+  const graph = [
+    `[1:v]scale=${w}:${height}:force_original_aspect_ratio=increase,crop=${w}:${height},format=rgba,` +
+      `geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='${alpha}'[pic]`,
+    `[0:v][pic]overlay=0:0,${filter}`,
+  ].join(";");
+  await ffmpeg([
+    "-y",
+    "-f", "lavfi", "-i", `color=c=white:s=${width}x${height}`,
+    "-i", resolve(picture),
+    "-filter_complex", graph,
     "-frames:v", "1", "-q:v", "2",
     resolve(outFile),
   ], { totalSec: null, signal }, cwd);

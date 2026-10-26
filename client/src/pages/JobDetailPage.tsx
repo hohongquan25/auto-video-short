@@ -313,6 +313,7 @@ export function JobDetailPage() {
           <JobTitle job={job} onRenamed={refresh} />
           <div className="meta-chips small muted">
             <StatusBadge status={job.status} />
+            {job.seriesTag && <span title="Số của truyện, đặt sau tên video trọn bộ TikTok và YouTube"><b>{job.seriesTag}</b></span>}
             <span>Tạo {formatDate(job.createdAt)}</span>
             {job.sourceUrl && (
               <a href={job.sourceInfo?.webpageUrl ?? job.sourceUrl} target="_blank" rel="noreferrer" className="source-link">
@@ -400,6 +401,7 @@ export function JobDetailPage() {
           <PublishTab
             job={job} busy={busy}
             onRegenerate={() => act(() => api.rerun(job.id, "publish"), "Đang tạo lại gợi ý đăng bài")}
+            onRedrawYoutube={() => act(() => api.redrawYoutubeCovers(job.id), "Đang vẽ lại ảnh bìa YouTube")}
           />
         )}
 

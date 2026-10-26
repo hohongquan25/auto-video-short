@@ -1,14 +1,17 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { paths } from "../config.js";
-import { probeVideoSize, stillFrame } from "../lib/ffmpeg.js";
+import { config, paths } from "../config.js";
+import { pictureCover, probeVideoSize, stillFrame } from "../lib/ffmpeg.js";
 import { badgeLines } from "../lib/badge.js";
 import { coverLines } from "../lib/cover.js";
+import { readFontMetrics } from "../lib/font.js";
 import { assTime, buildAss, type AssLayer } from "../lib/subtitles.js";
+import { COVER_ACCENT, COVER_FONT, FADE_SHARE, PICTURE_SHARE, youtubeCoverLines } from "../lib/youtube-cover.js";
 import {
-  VIDEO_FORMATS, type AiProvider, type Background, type Brand, type FitMode, type FullVideo, type JobOutput, type PublishKit,
+  VIDEO_FORMATS, storyNameOf, type AiProvider, type Background, type Brand, type FitMode, type FullVideo, type JobOutput, type PublishKit,
 } from "../types.js";
+import { drawCoverArt, findCoverArt } from "./cover-art.js";
 import { errorText, makeWriter, withRetry, type Writer } from "./rewrite.js";
 import { jsonObject } from "./write.js";
 import type { StepReporter } from "./run-job.js";
@@ -42,7 +45,13 @@ const kitSchema = z.object({
     description: z.string().trim().min(1),
     tags: z.array(z.string().trim().min(1)).default([]),
   }).nullish(),
+  coverImage: z.string().trim().default(""),
+  coverLabel: z.string().trim().default(""),
+  coverLines: z.array(z.string().trim()).default([]),
 });
+
+/** The YouTube cover's fields alone, asked for a kit written before them. */
+const coverSchema = kitSchema.pick({ coverImage: true, coverLabel: true, coverLines: true }).extend({ coverImage: z.string().trim().min(1) });
 
 /** "#Truyện ma", "truyenma" → "#Truyệnma", "#truyenma"; duplicates and blanks dropped. */
 export function cleanHashtags(tags: string[]): string[] {
@@ -69,7 +78,17 @@ export function parseKit(text: string, by: string, partCount: number, youtube: b
     hashtags: cleanHashtags(k.hashtags),
     partHooks: Array.from({ length: partCount }, (_, i) => k.partHooks[i] ?? ""),
     youtube: youtube && k.youtube ? { ...k.youtube, tags: k.youtube.tags.slice(0, 20) } : null,
+    ...coverOf(k),
   };
+}
+
+function coverOf(k: { coverImage: string; coverLabel: string; coverLines: string[] }) {
+  const lines = k.coverLines.filter(Boolean);
+  return { coverImage: k.coverImage || null, coverLabel: k.coverLabel || null, coverLines: lines.length ? lines : null };
+}
+
+export function parseCover(text: string): Pick<PublishKit, "coverImage" | "coverLabel" | "coverLines"> {
+  return coverOf(coverSchema.parse(jsonObject(text, "chữ trên ảnh bìa YouTube")));
 }
 
 /** Plain suggestions from the job title, for when the AI cannot be reached. */
@@ -96,6 +115,24 @@ const partEdges = (text: string) =>
 
 export const KIT_SYSTEM = "Bạn là chuyên gia tăng trưởng nội dung TikTok và YouTube cho các kênh truyện audio tiếng Việt. " +
   "Bạn hiểu thuật toán đề xuất, biết cách đặt tiêu đề khiến người xem dừng lướt, và chỉ dùng hashtag, từ khoá mà người xem thật sự tìm.";
+
+/** The JSON fields of the YouTube cover; `name` is the story's short name when it is already known. */
+const coverFields = (name: string | null) => `"coverImage": "bằng tiếng Anh, 40 đến 80 từ, tả nhân vật chính hoặc nhân vật gây ấn tượng nhất của truyện để AI vẽ hình bên trái ảnh bìa YouTube: giới tính, tuổi, người Việt Nam, kiểu tóc, trang phục đúng thời đại và bối cảnh truyện, biểu cảm hợp không khí truyện, có thể cầm một đồ vật đắt giá của truyện; chỉ tả người và đồ vật, không tả nền, không có chữ, không máu me",
+ "coverLabel": "dòng chữ nhỏ trên ảnh bìa YouTube nói thể loại, viết hoa, dưới 32 ký tự, dạng như TRUYỆN AUDIO NGÔN TÌNH FULL hay TRUYỆN MA AUDIO FULL",
+ "coverLines": ["${name ? `tên truyện ${name.toLocaleUpperCase("vi")}` : "storyName viết hoa"}, chia thành hai đến năm dòng ngắn để in to trên ảnh bìa YouTube: ngắt ở chỗ đọc tự nhiên, không tách đôi một từ ghép, giữ đủ các chữ và đúng thứ tự, ví dụ ĐẠI TIỂU THƯ, HÀO MÔN, VẢ MẶT, THÁI TỬ GIA, KIÊU NGẠO"]`;
+
+/** Only the YouTube cover's texts, for a story whose kit was written before they were asked for. */
+export function coverPrompt(opts: { name: string; story: string }): string {
+  return `Truyện audio "${opts.name}" được đăng thành một video dài trên YouTube.
+
+Toàn bộ truyện:
+<truyen>
+${opts.story}
+</truyen>
+
+Đọc kỹ truyện, rồi viết chữ và mô tả hình cho ảnh bìa YouTube của nó. Câu trả lời chỉ gồm DUY NHẤT một JSON hợp lệ, không markdown, không lời dẫn, theo mẫu:
+{${coverFields(opts.name)}}`;
+}
 
 export function kitPrompt(opts: {
   title: string; channel: string | null; story: string; partTexts: string[]; youtube: boolean; webSearch: boolean;
@@ -136,7 +173,7 @@ Sau khi tìm hiểu xong, câu trả lời cuối cùng chỉ gồm DUY NHẤT m
  "coverText": "chữ in to trên ảnh bìa: từ ba đến bảy chữ, gắn với chi tiết đắt nhất của truyện, không dấu câu thừa",
  "caption": "mô tả một đến hai câu khơi gợi tò mò, có từ khoá của ngách, có thể kèm một đến hai emoji, không chứa hashtag",
  "hashtags": ["đúng năm hashtag theo yêu cầu ở trên"],
- "partHooks": ["đúng ${n} câu theo thứ tự các phần, mỗi câu dưới 120 ký tự"],
+ "partHooks": ["đúng ${n} câu theo thứ tự các phần, mỗi câu dưới 120 ký tự"],${youtube ? `\n ${coverFields(null)},` : ""}
  "youtube": ${youtube ? `{"title": "tiêu đề YouTube dưới 100 ký tự, có ý nghĩa với truyện và có từ khoá người xem ngách này hay tìm", "description": "ba đến năm đoạn ngắn: giới thiệu truyện có từ khoá của ngách, không khí, lời mời nghe hết và đăng ký kênh", "tags": ["mười đến mười lăm từ khoá tìm kiếm tiếng Việt của ngách và của riêng truyện"]}` : "null"}}`;
 }
 
@@ -154,13 +191,15 @@ export async function preparePublish(opts: {
   provider: AiProvider;
   partsDir: string;
   kitFile: string;
+  /** Where the picture on the YouTube covers is kept. */
+  artDir: string;
   /** The job's chosen library videos; each cover is a frame from one of them. */
   backgrounds: Background[];
   fit: FitMode;
   brand: Brand;
   r: StepReporter;
 }): Promise<PublishKit> {
-  const { title, script, outputs, provider, partsDir, kitFile, backgrounds, fit, brand, r } = opts;
+  const { title, script, outputs, provider, partsDir, kitFile, artDir, backgrounds, fit, brand, r } = opts;
   const { signal } = r;
   const split = outputs.reduce<JobOutput | null>((best, o) => (o.parts.length > (best?.parts.length ?? 0) ? o : best), null);
   const partCount = split?.parts.length ?? 0;
@@ -209,26 +248,41 @@ export async function preparePublish(opts: {
 
   // ── Covers ──
   const videos = outputs.flatMap((o) => [
-    ...o.parts.map((video): { o: JobOutput; video: FullVideo; label: string | null } => ({ o, video, label: `Phần ${video.index}` })),
-    ...(o.fullVideo ? [{ o, video: o.fullVideo, label: o.parts.length ? "Trọn bộ" : null }] : []),
+    ...o.parts.map((video): { o: JobOutput; video: FullVideo; label: string | null; part: boolean } => ({ o, video, label: `Phần ${video.index}`, part: true })),
+    ...(o.fullVideo ? [{ o, video: o.fullVideo, label: o.parts.length ? "Trọn bộ" : null, part: false }] : []),
   ]);
-  for (const [i, { o, video, label }] of videos.entries()) {
+  const coverOfVideo = (video: FullVideo) => video.file.replace(/\.mp4$/, ".jpg");
+  // The YouTube covers show a picture of the story; without one they are drawn like the others.
+  const drawsYoutube = videos.some(({ o, video }) => o.format === "youtube" && !existsSync(join(partsDir, coverOfVideo(video))));
+  const art = drawsYoutube ? await youtubeArt(kit, { kitFile, artDir, provider, script, r }) : null;
+  const font = art && readFontMetrics(join(config.fontsDir, COVER_FONT.file));
+  for (const [i, { o, video, label, part }] of videos.entries()) {
     signal.throwIfAborted();
-    const cover = video.file.replace(/\.mp4$/, ".jpg");
+    const cover = coverOfVideo(video);
     const file = join(partsDir, cover);
     if (!existsSync(file)) {
       r.detail(`Vẽ ảnh bìa ${i + 1}/${videos.length}: ${VIDEO_FORMATS[o.format].label}${label ? ` · ${label}` : ""}`);
       // "original" videos take their frame from the footage, so match the video as rendered.
       const size = VIDEO_FORMATS[o.format].size ?? await probeVideoSize(join(partsDir, video.file));
-      const layers: AssLayer[] = [coverLines({ text: kit.coverText, label, accent: brand.color }, size.width, size.height, assTime)];
-      if (channel) layers.push(badgeLines({ text: channel, position: brand.position, color: brand.color, durationSec: 10, fadeIn: false }, size.width, size.height, assTime));
       const assFile = file.replace(/\.jpg$/, ".cover.ass");
-      writeFileSync(assFile, buildAss([], size.width, size.height, layers));
-      // Each cover from the next background, at a different moment away from its very start and end.
-      const bg = backgrounds[i % backgrounds.length];
-      const at = bg.durationSec > 2 ? (0.1 + ((i * 0.29) % 0.8)) * bg.durationSec : 0;
       try {
-        await stillFrame(join(paths.backgrounds, bg.file), at, file, { look: bg, frame: { ...size, fit }, subtitles: assFile }, signal);
+        if (o.format === "youtube" && art && font) {
+          const layer = youtubeCoverLines({
+            name: storyNameOf(kit), lines: kit.coverLines ?? null, label: kit.coverLabel || "Truyện audio full",
+            part: part ? label : null, channel, accent: COVER_ACCENT,
+          }, size.width, size.height, font, assTime);
+          writeFileSync(assFile, buildAss([], size.width, size.height, [layer]));
+          const pictureWidth = Math.round(size.width * PICTURE_SHARE);
+          await pictureCover(art, file, { ...size, pictureWidth, fadeWidth: pictureWidth * FADE_SHARE, subtitles: assFile, fontsDir: config.fontsDir }, signal);
+        } else {
+          const layers: AssLayer[] = [coverLines({ text: kit.coverText, label, accent: brand.color }, size.width, size.height, assTime)];
+          if (channel) layers.push(badgeLines({ text: channel, position: brand.position, color: brand.color, durationSec: 10, fadeIn: false }, size.width, size.height, assTime));
+          writeFileSync(assFile, buildAss([], size.width, size.height, layers));
+          // Each cover from the next background, at a different moment away from its very start and end.
+          const bg = backgrounds[i % backgrounds.length];
+          const at = bg.durationSec > 2 ? (0.1 + ((i * 0.29) % 0.8)) * bg.durationSec : 0;
+          await stillFrame(join(paths.backgrounds, bg.file), at, file, { look: bg, frame: { ...size, fit }, subtitles: assFile }, signal);
+        }
       } finally {
         rmSync(assFile, { force: true });
       }
@@ -238,4 +292,44 @@ export async function preparePublish(opts: {
   }
   r.log(`Đã vẽ ${videos.length} ảnh bìa`);
   return kit;
+}
+
+/**
+ * The picture for the YouTube covers: the one drawn before, else a new one
+ * by Gemini. A kit written before the AI was asked to describe the story's
+ * character gets that description first. Null, with the reason logged, when
+ * there is no picture.
+ */
+async function youtubeArt(
+  kit: PublishKit, opts: { kitFile: string; artDir: string; provider: AiProvider; script: string; r: StepReporter },
+): Promise<string | null> {
+  const { kitFile, artDir, provider, script, r } = opts;
+  const { signal } = r;
+  const found = findCoverArt(artDir);
+  if (found) return found;
+  if (!config.geminiImageApiKey) {
+    r.log("Chưa có GEMINI_IMAGE_API_KEY nên ảnh bìa YouTube chưa có hình minh hoạ, vẫn vẽ như trước (xem .env.example)", "warn");
+    return null;
+  }
+  if (!kit.coverImage) {
+    const writer = makeWriter(provider, KIT_SYSTEM, signal);
+    r.detail(`${writer.name} đang tả nhân vật và viết chữ cho ảnh bìa YouTube…`);
+    try {
+      Object.assign(kit, parseCover(await writer.write(coverPrompt({ name: storyNameOf(kit), story: storyExcerpt(script) }))));
+      writeFileSync(kitFile, JSON.stringify(kit, null, 2));
+    } catch (err) {
+      if (signal.aborted) throw err;
+      r.log(`AI chưa tả được nhân vật cho ảnh bìa YouTube (${errorText(err)}), Gemini vẽ theo tên và mô tả của truyện`, "warn");
+    }
+  }
+  r.detail("Gemini đang vẽ hình minh hoạ cho ảnh bìa YouTube…");
+  try {
+    const { file, model } = await drawCoverArt(kit, artDir, signal);
+    r.log(`Gemini (${model}) đã vẽ hình minh hoạ cho ảnh bìa YouTube`, "success");
+    return file;
+  } catch (err) {
+    if (signal.aborted) throw err;
+    r.log(`Không vẽ được hình minh hoạ cho ảnh bìa YouTube: ${errorText(err)}. Ảnh bìa YouTube vẫn vẽ như trước.`, "warn");
+    return null;
+  }
 }

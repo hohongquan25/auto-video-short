@@ -4,7 +4,7 @@ import { extractAudio, probeDuration } from "../lib/ffmpeg.js";
 import { downloadAudio, type DownloadProgress, type RetryHandler } from "../lib/ytdlp.js";
 import { creepProgress } from "../lib/progress.js";
 import { estimateSpeechSec, formatBytes, formatChars, formatDuration } from "../lib/format.js";
-import { getBackground, getBrand, getStyle, jobDir, saveJob } from "../store.js";
+import { getBackground, getBrand, getStyle, jobDir, saveJob, takeSeriesTag } from "../store.js";
 import { listOlvrocVoices } from "../lib/olvroc.js";
 import {
   AI_PROVIDER_LABELS, EDGE_VOICES, STEPS, TTS_PROVIDER_LABELS, VIDEO_FORMATS, formatPlan, renderedSec, videoCount, voiceProvider,
@@ -16,6 +16,7 @@ import { writeStory } from "./write.js";
 import { synthesizeScript } from "./tts.js";
 import { renderParts } from "./render.js";
 import { preparePublish } from "./publish.js";
+import { removeCoverArt } from "./cover-art.js";
 import { uploadToDrive } from "./upload.js";
 import { googleConfigured } from "../lib/google.js";
 
@@ -87,6 +88,7 @@ export function resetFromStep(job: Job, fromStep: Step): void {
   }
   if (at("publish")) {
     rmSync(a.publishKit, { force: true });
+    removeCoverArt(a.dir);
     for (const v of job.outputs.flatMap((o) => [...o.parts, ...(o.fullVideo ? [o.fullVideo] : [])])) {
       if (v.cover) rmSync(join(a.partsDir, v.cover), { force: true });
       delete v.cover;
@@ -382,6 +384,11 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
 
   // ── 7. Publish ──────────────────────────────────────────────────────────
   enter("publish", "Bắt đầu chuẩn bị đăng bài: tiêu đề, mô tả, hashtag và ảnh bìa");
+  // The story takes its number tag once, when its videos are first ready; running this step again keeps it.
+  if (!job.seriesTag) {
+    job.seriesTag = takeSeriesTag(job);
+    if (job.seriesTag) r.log(`Truyện được đánh số ${job.seriesTag}: thêm vào tên video trọn bộ TikTok và YouTube`);
+  }
   job.publish = await preparePublish({
     title: job.title,
     script: readFileSync(a.script, "utf8"),
@@ -389,11 +396,15 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
     provider: job.settings.aiProvider,
     partsDir: a.partsDir,
     kitFile: a.publishKit,
+    artDir: a.dir,
     backgrounds,
     fit: job.settings.fit,
     brand,
     r,
   });
+  // Whole-story videos are named "Tên (Truyện Full) #gactro1 | Gác trọ Audio": the story's number and the channel name.
+  job.publish.seriesTag = job.seriesTag;
+  job.publish.channel = brand.text.trim() || null;
 
   // ── 8. Upload (when Google is set up) ───────────────────────────────────
   if (googleConfigured()) {

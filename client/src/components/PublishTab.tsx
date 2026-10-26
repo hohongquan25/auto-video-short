@@ -24,7 +24,9 @@ function CopyField({ label, text, what, multiline = false }: { label: string; te
  * Everything needed to post the finished videos: title ideas, description
  * and hashtags, then for each video its cover and the exact text to paste.
  */
-export function PublishTab({ job, busy, onRegenerate }: { job: Job; busy: boolean; onRegenerate: () => void }) {
+export function PublishTab({ job, busy, onRegenerate, onRedrawYoutube }: {
+  job: Job; busy: boolean; onRegenerate: () => void; onRedrawYoutube: () => void;
+}) {
   const toast = useToast();
   const kit = job.publish;
   const locked = isActive(job);
@@ -50,6 +52,11 @@ export function PublishTab({ job, busy, onRegenerate }: { job: Job; busy: boolea
           <span className="warn-text"><TriangleAlert size={14} /> AI chưa viết được gợi ý, đây là bản mẫu theo tên truyện</span>
         )}
         <span className="spacer" />
+        {job.outputs.some((o) => o.format === "youtube") && (
+          <button className="small" disabled={busy || locked} onClick={onRedrawYoutube} title="Vẽ hình minh hoạ mới cho ảnh bìa YouTube, giữ nguyên tiêu đề, mô tả và hashtag">
+            <ImageIcon size={14} /> Vẽ lại ảnh bìa YouTube
+          </button>
+        )}
         <button className="small" disabled={busy || locked} onClick={onRegenerate}><RotateCcw size={14} /> Tạo lại gợi ý</button>
       </div>
 

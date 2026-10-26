@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { balancedLines, coverText, wrapLines } from "../server/lib/cover.js";
-import { cleanHashtags, kitPrompt, parseKit, storyExcerpt } from "../server/pipeline/publish.js";
-import { postFor, type PublishKit } from "../server/types.js";
+import { coverArtPrompt } from "../server/pipeline/cover-art.js";
+import { cleanHashtags, coverPrompt, kitPrompt, parseCover, parseKit, storyExcerpt } from "../server/pipeline/publish.js";
+import { nextSeriesTag, postFor, type PublishKit } from "../server/types.js";
 
 describe("cover text", () => {
   it("spreads words evenly instead of leaving one alone on the last line", () => {
@@ -62,6 +63,32 @@ describe("publish kit", () => {
     expect(kitPrompt({ ...base, webSearch: true })).toContain("đúng 2 câu");
   });
 
+  it("asks for the YouTube cover's texts and picture only when there is a YouTube video", () => {
+    const base = { title: "T", channel: null, story: "s", partTexts: ["p1"], webSearch: false };
+    const withYoutube = kitPrompt({ ...base, youtube: true });
+    expect(withYoutube).toContain('"coverImage": "bằng tiếng Anh');
+    expect(withYoutube).toContain('"coverLines": ["storyName viết hoa');
+    expect(kitPrompt({ ...base, youtube: false })).not.toContain("coverImage");
+    expect(coverPrompt({ name: "Lời khai của kẻ mù", story: "s" })).toContain("tên truyện LỜI KHAI CỦA KẺ MÙ, chia thành");
+  });
+
+  it("reads the YouTube cover's fields, which kits written before them lack", () => {
+    const reply = '{"titles":["A"],"coverText":"B","caption":"C","hashtags":["x"],"coverImage":" A blind old man ","coverLabel":"TRUYỆN MA AUDIO FULL","coverLines":["LỜI KHAI"," ","CỦA KẺ MÙ"]}';
+    expect(parseKit(reply, "AI", 0, true)).toMatchObject({ coverImage: "A blind old man", coverLabel: "TRUYỆN MA AUDIO FULL", coverLines: ["LỜI KHAI", "CỦA KẺ MÙ"] });
+    expect(parseKit('{"titles":["A"],"coverText":"B","caption":"C","hashtags":["x"]}', "AI", 0, true))
+      .toMatchObject({ coverImage: null, coverLabel: null, coverLines: null });
+    expect(parseCover('{"coverImage":"An old man","coverLines":["A"]}')).toEqual({ coverImage: "An old man", coverLabel: null, coverLines: ["A"] });
+    expect(() => parseCover('{"coverLabel":"X"}')).toThrow();
+  });
+
+  it("asks Gemini for the described character on a white page, or the story's premise without a description", () => {
+    const kit = { by: "AI", niche: { genre: "truyện ma", audience: "", similar: [], insight: "" }, titles: ["T"], storyName: "Lời khai của kẻ mù", coverText: "", caption: "Một lời khai lạ", hashtags: [], partHooks: [], youtube: null };
+    const described = coverArtPrompt({ ...kit, coverImage: "A blind old man holding a cane" });
+    expect(described.startsWith("A blind old man holding a cane\n\n")).toBe(true);
+    expect(described).toContain("plain seamless pure white background");
+    expect(coverArtPrompt(kit)).toContain('"Lời khai của kẻ mù" (truyện ma): Một lời khai lạ');
+  });
+
   it("asks for the five hashtags TikTok takes, without generic ones, and a short name for TikTok", () => {
     const prompt = kitPrompt({ title: "T", channel: null, story: "s", partTexts: ["p1"], youtube: true, webSearch: false });
     expect(prompt).toContain("đúng năm hashtag");
@@ -91,30 +118,64 @@ describe("post texts", () => {
     }
   });
 
-  it("marks the whole story as trọn bộ", () => {
-    expect(postFor(kit, "tiktok", null).description).toBe("Ba tiếng gõ cửa (trọn bộ)\n\n#a #b #c #d #e");
+  it("names the whole-story video \"Tên (Truyện Full)\"", () => {
+    expect(postFor(kit, "tiktok", null).description).toBe("Ba tiếng gõ cửa (Truyện Full)\n\n#a #b #c #d #e");
   });
 
   it("is only the name when there are no hashtags", () => {
-    expect(postFor({ ...kit, hashtags: [] }, "tiktok", null)).toEqual({ title: null, description: "Ba tiếng gõ cửa (trọn bộ)", tags: [] });
+    expect(postFor({ ...kit, hashtags: [] }, "tiktok", null)).toEqual({ title: null, description: "Ba tiếng gõ cửa (Truyện Full)", tags: [] });
   });
 
   it("takes the name from the best title when the kit has no short name", () => {
     expect(postFor({ ...kit, storyName: null }, "tiktok", { index: 1, total: 2 }).description).toBe("Ba tiếng gõ cửa lúc nửa đêm | Phần 1/2\n\n#a #b #c #d #e");
     // Kits written before the short name was asked for have none at all.
-    expect(postFor({ ...kit, storyName: undefined }, "tiktok", null).description).toBe("Ba tiếng gõ cửa lúc nửa đêm (trọn bộ)\n\n#a #b #c #d #e");
+    expect(postFor({ ...kit, storyName: undefined }, "tiktok", null).description).toBe("Ba tiếng gõ cửa lúc nửa đêm (Truyện Full)\n\n#a #b #c #d #e");
     // A title that is all noise stays as it is.
-    expect(postFor({ ...kit, storyName: null, titles: ["[FULL]"], hashtags: [] }, "tiktok", null).description).toBe("[FULL] (trọn bộ)");
+    expect(postFor({ ...kit, storyName: null, titles: ["[FULL]"], hashtags: [] }, "tiktok", null).description).toBe("[FULL] (Truyện Full)");
   });
 
-  it("keeps the YouTube texts as they are", () => {
-    expect(postFor(kit, "youtube", null)).toEqual({ title: "YT", description: "Dài", tags: ["t"] });
+  it("names YouTube's whole-story video like TikTok's, and keeps the rest of the YouTube texts", () => {
+    expect(postFor(kit, "youtube", null)).toEqual({ title: "Ba tiếng gõ cửa (Truyện Full)", description: "Dài", tags: ["t"] });
     expect(postFor(kit, "youtube", { index: 2, total: 3 })).toEqual({ title: "YT | Phần 2/3", description: "Dài", tags: ["t"] });
+  });
+
+  it("puts the number tag and the channel after the name of whole-story videos only", () => {
+    const numbered = { ...kit, storyName: "Lời khai của kẻ mù", seriesTag: "#gactro1", channel: "Gác trọ Audio" };
+    const name = "Lời khai của kẻ mù (Truyện Full) #gactro1 | Gác trọ Audio";
+    expect(postFor(numbered, "tiktok", null).description).toBe(`${name}\n\n#a #b #c #d`);
+    expect(postFor(numbered, "original", null).description).toBe(`${name}\n\n#a #b #c #d`);
+    expect(postFor(numbered, "youtube", null).title).toBe(name);
+    expect(postFor(numbered, "tiktok", { index: 1, total: 2 }).description).toBe("Lời khai của kẻ mù | Phần 1/2\n\n#a #b #c #d #e");
+    expect(postFor(numbered, "youtube", { index: 2, total: 3 }).title).toBe("YT | Phần 2/3");
+    expect(postFor({ ...numbered, youtube: null }, "youtube", null).description.startsWith(`${name}\n\nMô tả`)).toBe(true);
+    // Not numbered: the channel alone.
+    expect(postFor({ ...kit, channel: "Gác trọ Audio" }, "tiktok", null).description).toBe("Ba tiếng gõ cửa (Truyện Full) | Gác trọ Audio\n\n#a #b #c #d #e");
+  });
+
+  it("cuts a name too long for a YouTube title after a whole word, keeping the number and the channel", () => {
+    const long = { ...kit, storyName: "Người đàn bà áo trắng đứng đợi ở bến đò làng bên kia sông mỗi đêm mưa tháng bảy âm lịch", seriesTag: "#gactro12", channel: "Gác trọ Audio" };
+    const { title } = postFor(long, "youtube", null);
+    expect(title!.length).toBeLessThanOrEqual(100);
+    expect(title).toMatch(/^Người đàn bà áo trắng .*[^ ]… \(Truyện Full\) #gactro12 \| Gác trọ Audio$/u);
+    expect(long.storyName.startsWith(title!.split("…")[0])).toBe(true);
   });
 
   it("gives a YouTube video without the AI's YouTube texts a full description", () => {
     const plain = { ...kit, youtube: null };
-    expect(postFor(plain, "youtube", null).description).toBe("Ba tiếng gõ cửa lúc nửa đêm: ai đứng ngoài hiên? (trọn bộ)\n\nMô tả\n\n#a #b #c #d #e #f #g");
+    expect(postFor(plain, "youtube", null).description).toBe("Ba tiếng gõ cửa (Truyện Full)\n\nMô tả\n\n#a #b #c #d #e #f #g");
     expect(postFor(plain, "youtube", { index: 2, total: 2 }).description).toBe("Ba tiếng gõ cửa lúc nửa đêm: ai đứng ngoài hiên? | Phần 2/2\n\nNhử 2\n\n#a #b #c #d #e #f #g");
+  });
+});
+
+describe("numbering whole-story videos", () => {
+  const numbering = { tag: "gactro", next: 7, since: "2026-10-24T00:00:00.000Z" };
+
+  it("gives stories created since numbering began the next number", () => {
+    expect(nextSeriesTag(numbering, { createdAt: "2026-10-24T08:00:00.000Z" })).toBe("#gactro7");
+  });
+
+  it("leaves older stories, and every story while the tag is empty, without a number", () => {
+    expect(nextSeriesTag(numbering, { createdAt: "2026-10-23T23:59:00.000Z" })).toBeNull();
+    expect(nextSeriesTag({ ...numbering, tag: "" }, { createdAt: "2026-10-24T08:00:00.000Z" })).toBeNull();
   });
 });

@@ -125,20 +125,72 @@ function SummaryDefaults({ saved, onSaved }: { saved: SummarySettings; onSaved: 
   );
 }
 
+type NumberingDraft = { tag: string; next: number };
+
+function NumberingSettings({ saved, channel, onSaved }: { saved: NumberingDraft; channel: string; onSaved: (n: NumberingDraft) => void }) {
+  const toast = useToast();
+  const [draft, setDraft] = useState(saved);
+  const [busy, setBusy] = useState(false);
+  const tag = draft.tag.trim().replace(/^#+/, "");
+  const problem = tag && !/^[\p{L}\p{N}_]+$/u.test(tag) ? "Tên thẻ chỉ gồm chữ, số và dấu gạch dưới, không có khoảng trắng"
+    : !(Number.isInteger(draft.next) && draft.next >= 1) ? "Số kế tiếp phải là số nguyên từ 1 trở lên"
+    : null;
+  const save = async () => {
+    setBusy(true);
+    try {
+      const n = await api.saveNumbering({ tag, next: draft.next });
+      onSaved(n);
+      setDraft(n);
+      toast("success", "Đã lưu cách đánh số");
+    } catch (err) {
+      toast("error", errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card" id="numbering">
+      <h2>Đánh số video trọn bộ</h2>
+      <p className="small muted">
+        Mỗi truyện mới nhận một số khi làm xong video. Video trọn bộ TikTok và YouTube của truyện đó có số này sau tên, rồi tới tên kênh
+        (đặt ở Thư viện), ví dụ <b>Ba tiếng gõ cửa (Truyện Full){tag && ` #${tag}${draft.next}`}{channel && ` | ${channel}`}</b>
+        {!tag && " (đang tắt đánh số)"}. Trên TikTok số này tính là một trong 5 hashtag. Để trống tên thẻ để tắt.
+      </p>
+      <div className="grid-2">
+        <label className="field">
+          <span className="field-label">Tên thẻ</span>
+          <input type="text" value={draft.tag} placeholder="gactro" onChange={(e) => setDraft((d) => ({ ...d, tag: e.target.value }))} />
+        </label>
+        <label className="field">
+          <span className="field-label">Số của truyện kế tiếp</span>
+          <input type="number" min={1} step={1} value={draft.next} onChange={(e) => setDraft((d) => ({ ...d, next: Number(e.target.value) }))} />
+        </label>
+      </div>
+      <SaveBar changed={!same({ tag, next: draft.next }, saved)} busy={busy} problem={problem} onUndo={() => setDraft(saved)} onSave={save} />
+    </section>
+  );
+}
+
 /** Where every new job starts: the story video defaults (also used by Tạo nhanh) and the summary defaults. */
 export function SettingsPage() {
   const toast = useToast();
   const { meta, error: loadError } = useLibrary();
   const [story, setStory] = useState<DefaultSettings | null>(null);
   const [summary, setSummary] = useState<SummarySettings | null>(null);
+  const [numbering, setNumbering] = useState<NumberingDraft | null>(null);
+  const [channel, setChannel] = useState("");
 
   useEffect(() => {
     api.defaults().then(setStory).catch((e) => toast("error", errorMessage(e)));
     api.summaryDefaults().then(setSummary).catch((e) => toast("error", errorMessage(e)));
+    api.numbering().then(setNumbering).catch((e) => toast("error", errorMessage(e)));
+    // Only for the example name: without it the example just has no channel.
+    api.brand().then((b) => setChannel(b.text.trim())).catch(() => {});
   }, [toast]);
 
   if (loadError) return <div className="alert error"><CircleAlert size={16} />{loadError}</div>;
-  if (!meta || !story || !summary) return <div className="loading"><LoaderCircle className="spin" /> Đang tải…</div>;
+  if (!meta || !story || !summary || !numbering) return <div className="loading"><LoaderCircle className="spin" /> Đang tải…</div>;
 
   return (
     <>
@@ -151,6 +203,7 @@ export function SettingsPage() {
         </div>
       </div>
       <StoryDefaults saved={story} onSaved={setStory} />
+      <NumberingSettings saved={numbering} channel={channel} onSaved={setNumbering} />
       <SummaryDefaults saved={summary} onSaved={setSummary} />
     </>
   );
