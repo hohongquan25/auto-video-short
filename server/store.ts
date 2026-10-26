@@ -1,7 +1,8 @@
 import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { paths } from "./config.js";
+import { paths, type SavedKeys } from "./config.js";
+import { RETAIL } from "./edition.js";
 import {
   SUMMARY_DEFAULTS, nextSeriesTag, type Background, type Brand, type DefaultSettings, type FullVideo, type Job, type JobPart, type Numbering, type Style,
   type SummarySettings, type VideoFormat,
@@ -215,7 +216,8 @@ export function saveSummaryDefaults(defaults: SummarySettings): void {
 export function getNumbering(): Numbering {
   const saved = readJson<Numbering | null>(paths.numberingFile, null);
   if (saved) return saved;
-  const fresh: Numbering = { tag: "gactro", next: 1, since: new Date().toISOString() };
+  // A customer's copy starts unnumbered: the tag names the seller's own channel.
+  const fresh: Numbering = { tag: RETAIL ? "" : "gactro", next: 1, since: new Date().toISOString() };
   writeJson(paths.numberingFile, fresh);
   return fresh;
 }
@@ -230,6 +232,30 @@ export function takeSeriesTag(job: Pick<Job, "createdAt">): string | null {
   const tag = nextSeriesTag(numbering, job);
   if (tag) saveNumbering({ ...numbering, next: numbering.next + 1 });
   return tag;
+}
+
+// ── Gemini keys and licence ─────────────────────────────────────────────────
+
+export function getSavedKeys(): SavedKeys {
+  return { gemini: null, geminiImage: null, ...readJson<Partial<SavedKeys>>(paths.keysFile, {}) };
+}
+
+export function saveKeys(keys: SavedKeys): void {
+  writeJson(paths.keysFile, keys);
+}
+
+/** The licence key pasted in, and the latest time the app saw, so turning the clock back cannot stretch a key. */
+export interface LicenseState {
+  key: string | null;
+  lastSeen: string | null;
+}
+
+export function getLicenseState(): LicenseState {
+  return { key: null, lastSeen: null, ...readJson<Partial<LicenseState>>(paths.licenseFile, {}) };
+}
+
+export function saveLicenseState(state: LicenseState): void {
+  writeJson(paths.licenseFile, state);
 }
 
 // ── Google account ──────────────────────────────────────────────────────────

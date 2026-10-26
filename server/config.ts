@@ -1,17 +1,33 @@
 import { config as loadEnv } from "dotenv";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { RETAIL } from "./edition.js";
 
-loadEnv({ path: ".env.local", quiet: true });
-loadEnv({ quiet: true });
+if (!RETAIL) {
+  loadEnv({ path: ".env.local", quiet: true });
+  loadEnv({ quiet: true });
+}
 
-const root = process.cwd();
+/**
+ * The app's own files: the repo when run from source, the install folder when
+ * packaged (the bundle sits in server\, one level down, as this file does).
+ */
+const root = RETAIL ? resolve(dirname(fileURLToPath(import.meta.url)), "..") : process.cwd();
 const venvPython = process.platform === "win32"
   ? join(root, ".venv", "Scripts", "python.exe")
   : join(root, ".venv", "bin", "python");
+/** The packaged app brings its own Python, Node and ffmpeg in runtime\. */
+const runtime = join(root, "runtime");
 
-const env = (key: string) => process.env[key]?.trim() || undefined;
+/** The settings a customer's machine may still change; any other variable left over there could switch on what the edition leaves out. */
+const RETAIL_ENV = new Set([
+  "PORT", "STUDIO_DATA_DIR", "GEMINI_MODEL", "GEMINI_IMAGE_MODEL",
+  "WHISPER_MODEL", "WHISPER_LANGUAGE", "WHISPER_BEAM_SIZE", "WHISPER_BATCH_SIZE", "WHISPER_THREADS",
+]);
+
+const env = (key: string) => (RETAIL && !RETAIL_ENV.has(key) ? undefined : process.env[key]?.trim() || undefined);
 
 /** An optional setting that must match `pattern`; a typo fails at startup instead of being silently ignored. */
 function checkedEnv(key: string, pattern: RegExp, example: string): string | undefined {
@@ -47,6 +63,9 @@ function findClaude(): string {
 
 const port = Number(env("PORT") ?? 5178);
 
+/** Gemini keys from .env.local, used while none is saved in Settings. */
+const envKeys = { gemini: env("GEMINI_API_KEY"), geminiImage: env("GEMINI_IMAGE_API_KEY") };
+
 export const config = {
   port,
   /** 127.0.0.1 = only this machine; 0.0.0.0 also lets Docker containers / the LAN in (needs API_TOKEN). */
@@ -57,18 +76,20 @@ export const config = {
   publicUrl: (env("PUBLIC_URL") ?? `http://127.0.0.1:${port}`).replace(/\/+$/, ""),
   /** Default webhook notified when any job finishes, fails or waits for review. */
   webhookUrl: env("WEBHOOK_URL"),
-  dataDir: resolve(root, env("DATA_DIR") ?? "data"),
+  dataDir: RETAIL
+    ? env("STUDIO_DATA_DIR") ?? join(process.env.LOCALAPPDATA ?? homedir(), "Story Studio")
+    : resolve(root, env("DATA_DIR") ?? "data"),
   clientDist: join(root, "dist", "client"),
-  geminiApiKey: env("GEMINI_API_KEY"),
+  geminiApiKey: envKeys.gemini,
   geminiModel: env("GEMINI_MODEL") ?? "gemini-flash-latest",
   /** Drawing has no free tier, so its key may be one of a project with billing (or Google AI Pro credits). */
-  geminiImageApiKey: env("GEMINI_IMAGE_API_KEY") ?? env("GEMINI_API_KEY"),
+  geminiImageApiKey: envKeys.geminiImage ?? envKeys.gemini,
   /** Unset: the cheapest current models, each tried in turn while Google does not know the name. */
   geminiImageModel: env("GEMINI_IMAGE_MODEL"),
-  claudePath: env("CLAUDE_PATH") ?? findClaude(),
+  claudePath: RETAIL ? "" : env("CLAUDE_PATH") ?? findClaude(),
   claudeModel: env("CLAUDE_MODEL") ?? "sonnet",
   /** Same Python as Whisper: `pnpm setup:whisper` installs what python/olvroc needs too. */
-  olvrocPython: env("WHISPER_PYTHON") ?? (existsSync(venvPython) ? venvPython : "python"),
+  olvrocPython: RETAIL ? join(runtime, "python", "python.exe") : env("WHISPER_PYTHON") ?? (existsSync(venvPython) ? venvPython : "python"),
   /** Model files (~650 MB, kept out of git), downloaded by `pnpm setup:olvroc`. */
   olvrocModelDir: join(root, "models", "olvroc"),
   olvrocScript: join(root, "python", "olvroc_tts.py"),
@@ -86,7 +107,7 @@ export const config = {
   whisperBatchSize: checkedEnv("WHISPER_BATCH_SIZE", /^([1-9]|[1-5]\d|6[0-4])$/, "8") ?? "8",
   /** 0 lets CTranslate2 choose; more threads did not help in testing. */
   whisperThreads: checkedEnv("WHISPER_THREADS", /^\d{1,3}$/, "0") ?? "0",
-  whisperPython: env("WHISPER_PYTHON") ?? (existsSync(venvPython) ? venvPython : "python"),
+  whisperPython: RETAIL ? join(runtime, "python", "python.exe") : env("WHISPER_PYTHON") ?? (existsSync(venvPython) ? venvPython : "python"),
   whisperScript: join(root, "python", "transcribe.py"),
   /** yt-dlp command: YTDLP_PATH, else the copy installed in .venv by `pnpm setup:whisper`. */
   ytdlp: env("YTDLP_PATH") ? [env("YTDLP_PATH")!] : existsSync(venvPython) ? [venvPython, "-m", "yt_dlp"] : ["yt-dlp"],
@@ -109,9 +130,20 @@ export const config = {
   googleDriveFolderId: googleId(env("GOOGLE_DRIVE_FOLDER_ID"), "GOOGLE_DRIVE_FOLDER_ID"),
   googleSheetId: googleId(env("GOOGLE_SHEET_ID"), "GOOGLE_SHEET_ID"),
   googleSheetTab: env("GOOGLE_SHEET_TAB") ?? "Videos",
-  ffmpeg: env("FFMPEG_PATH") ?? "ffmpeg",
-  ffprobe: env("FFPROBE_PATH") ?? "ffprobe",
+  ffmpeg: RETAIL ? join(runtime, "ffmpeg", "ffmpeg.exe") : env("FFMPEG_PATH") ?? "ffmpeg",
+  ffprobe: RETAIL ? join(runtime, "ffmpeg", "ffprobe.exe") : env("FFPROBE_PATH") ?? "ffprobe",
 };
+
+export interface SavedKeys {
+  gemini: string | null;
+  geminiImage: string | null;
+}
+
+/** Use the Gemini keys saved in Settings; one left empty falls back to .env.local. */
+export function applyKeys(saved: SavedKeys): void {
+  config.geminiApiKey = saved.gemini ?? envKeys.gemini;
+  config.geminiImageApiKey = saved.geminiImage ?? envKeys.geminiImage ?? config.geminiApiKey;
+}
 
 export const paths = {
   jobs: join(config.dataDir, "jobs"),
@@ -124,6 +156,10 @@ export const paths = {
   defaultsFile: join(config.dataDir, "defaults.json"),
   summaryDefaultsFile: join(config.dataDir, "summary-defaults.json"),
   numberingFile: join(config.dataDir, "numbering.json"),
+  /** Gemini keys pasted in Settings. Secret. */
+  keysFile: join(config.dataDir, "keys.json"),
+  /** The licence key of a packaged copy. */
+  licenseFile: join(config.dataDir, "license.json"),
   /** The connected Google account's refresh token and the folder and sheet made for it. Secret. */
   googleFile: join(config.dataDir, "google.json"),
 };

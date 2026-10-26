@@ -12,7 +12,9 @@ import { SummariesPage } from "./pages/SummariesPage";
 import { SummaryDetailPage } from "./pages/SummaryDetailPage";
 import { ToastProvider } from "./components/Toast";
 import { SystemStatusPanel } from "./components/SystemStatus";
+import { LicenseGate } from "./components/LicenseGate";
 import { LibraryProvider } from "./useLibrary";
+import { RETAIL } from "./edition";
 import "./styles.css";
 
 function App() {
@@ -28,7 +30,7 @@ function App() {
           <NavLink to="/" end><LayoutList size={17} /> <span>Danh sách video</span></NavLink>
           <NavLink to="/summaries"><Scissors size={17} /> <span>Tóm tắt video</span></NavLink>
           <NavLink to="/library"><FolderOpen size={17} /> <span>Thư viện</span></NavLink>
-          <NavLink to="/settings"><SlidersHorizontal size={17} /> <span>Cài đặt mặc định</span></NavLink>
+          <NavLink to="/settings"><SlidersHorizontal size={17} /> <span>Cài đặt</span></NavLink>
         </nav>
         <span className="spacer" />
         <SystemStatusPanel />
@@ -49,13 +51,17 @@ function App() {
   );
 }
 
+const app = (
+  <LibraryProvider>
+    <App />
+  </LibraryProvider>
+);
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <ToastProvider>
-        <LibraryProvider>
-          <App />
-        </LibraryProvider>
+        {RETAIL ? <LicenseGate>{app}</LicenseGate> : app}
       </ToastProvider>
     </BrowserRouter>
   </StrictMode>,

@@ -1,14 +1,17 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
+import { GoogleGenAI } from "@google/genai";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { extname, join } from "node:path";
 import { z } from "zod";
-import { config, paths } from "./config.js";
+import { applyKeys, config, paths } from "./config.js";
+import { RETAIL } from "./edition.js";
 import {
   deleteJob, ensureDataDirs, getBackground, getBrand, getStyle, isValidId, jobDir, listBackgrounds,
-  getNumbering, getSavedDefaults, getSavedSummaryDefaults, listJobs, listStyles, newId, saveBackgrounds, saveBrand, saveDefaults, saveJob,
-  saveNumbering, saveStyles, saveSummaryDefaults,
+  getNumbering, getSavedDefaults, getSavedKeys, getSavedSummaryDefaults, listJobs, listStyles, newId, saveBackgrounds, saveBrand, saveDefaults, saveJob,
+  saveKeys, saveNumbering, saveStyles, saveSummaryDefaults,
 } from "./store.js";
 import { cancel, enqueue, isBusy, liveJob, notify, resumeOnStartup } from "./queue.js";
 import { jobLinks } from "./webhook.js";
@@ -22,11 +25,13 @@ import { claudeStatus } from "./lib/claude.js";
 import { listOlvrocVoices, olvrocStatus, olvrocSynthesize } from "./lib/olvroc.js";
 import { probeUrl, ytdlpVersion } from "./lib/ytdlp.js";
 import { finishOauth, googleConfigured, googleStatus, oauthUrl } from "./lib/google.js";
+import { activateLicense, licenseStatus } from "./lib/license.js";
 import {
-  BACKGROUND_SPEEDS, BUILTIN_DEFAULTS, EDGE_VOICES, FALLBACK_VOICE, STEPS, STEP_LABELS, OLVROC_PREFIX, SUMMARY_DEFAULTS, storyNameFromTitle, voiceProvider, type Background, type DefaultSettings, type Job, type SummarySettings, type SystemStatus, type Voice,
+  BACKGROUND_SPEEDS, BUILTIN_DEFAULTS, EDGE_VOICES, FALLBACK_VOICE, STEPS, STEP_LABELS, OLVROC_PREFIX, SUMMARY_DEFAULTS, storyNameFromTitle, voiceProvider, type AiProvider, type Background, type DefaultSettings, type Job, type SummarySettings, type SystemStatus, type Voice,
 } from "./types.js";
 
 ensureDataDirs();
+applyKeys(getSavedKeys());
 // Numbering starts the first time the server runs with it, so only stories created from then on are numbered.
 getNumbering();
 
@@ -72,10 +77,41 @@ app.use(["/api", "/files"], (req, _res, next) => {
   throw new HttpError(401, "Thiếu hoặc sai API token (gửi header Authorization: Bearer <API_TOKEN>)");
 });
 
+// ── Licence (packaged copies) ───────────────────────────────────────────────
+
+if (RETAIL) {
+  app.get("/api/license", (_req, res) => {
+    res.json(licenseStatus());
+  });
+
+  app.put("/api/license", (req, res) => {
+    const { key } = z.object({ key: z.string().trim().min(1, "Hãy dán khoá bản quyền") }).parse(req.body);
+    try {
+      res.json(activateLicense(key));
+    } catch (err) {
+      throw new HttpError(400, err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  /** Everything else waits for a working key; `license: true` tells the page to show the activation screen. */
+  app.use("/api", (_req, res, next) => {
+    const status = licenseStatus();
+    if (status.ok) return next();
+    res.status(403).json({ error: status.error ?? "Story Studio chưa được kích hoạt", license: true });
+  });
+}
+
 // ── Meta ────────────────────────────────────────────────────────────────────
 
 /** Last line of an error: the useful part of a Python traceback or ffmpeg log. */
 const errorLine = (err: unknown) => (err instanceof Error ? err.message : String(err)).trim().split("\n").pop()!.slice(0, 300);
+
+/** What a packaged copy reports for the parts it leaves out. */
+const LEFT_OUT = {
+  claude: { ok: false, installed: false, version: null, subscription: null, model: "", error: null },
+  ytdlp: { ok: false, version: null, cookies: null },
+  google: { ok: false, auth: null, canConnect: false, account: null, folderUrl: null, sheetUrl: null, error: null },
+} satisfies Pick<SystemStatus, "claude" | "ytdlp" | "google">;
 
 async function checkSystem(): Promise<SystemStatus> {
   const [ffmpeg, whisper, claude] = await Promise.all([
@@ -85,15 +121,17 @@ async function checkSystem(): Promise<SystemStatus> {
     run(config.whisperPython, ["-c", "import faster_whisper"])
       .then(() => ({ ok: true, python: config.whisperPython, error: null }))
       .catch((err: unknown) => ({ ok: false, python: config.whisperPython, error: errorLine(err) })),
-    claudeStatus(),
+    RETAIL ? null : claudeStatus(),
   ]);
   const olvroc = await olvrocStatus(true);
+  const gemini = { ok: Boolean(config.geminiApiKey), model: config.geminiModel };
+  if (RETAIL || !claude) return { ffmpeg, whisper, gemini, olvroc, ...LEFT_OUT };
   const ytdlpVer = await ytdlpVersion().catch(() => null);
   const google = await googleStatus();
   return {
     ffmpeg,
     whisper,
-    gemini: { ok: Boolean(config.geminiApiKey), model: config.geminiModel },
+    gemini,
     claude: { ok: claude.loggedIn, ...claude, model: config.claudeModel },
     olvroc,
     ytdlp: {
@@ -127,6 +165,53 @@ app.get("/api/meta", async (req, res) => {
     system,
   });
 });
+
+// ── Gemini keys ─────────────────────────────────────────────────────────────
+
+/** Enough of a key to tell which one is saved, never the whole key. */
+const maskKey = (key: string | null) => (key ? `${key.slice(0, 6)}…${key.slice(-4)}` : null);
+
+const keysView = () => {
+  const saved = getSavedKeys();
+  return { gemini: maskKey(saved.gemini), geminiImage: maskKey(saved.geminiImage), geminiReady: Boolean(config.geminiApiKey) };
+};
+
+app.get("/api/keys", (_req, res) => {
+  res.json(keysView());
+});
+
+/** Ask Google about the model the app writes with: a wrong or deleted key fails here instead of halfway through a job. */
+async function checkGeminiKey(key: string): Promise<void> {
+  try {
+    await new GoogleGenAI({ apiKey: key }).models.get({ model: config.geminiModel, config: { abortSignal: AbortSignal.timeout(20_000) } });
+  } catch (err) {
+    throw new HttpError(400, /API_KEY_INVALID|API key not valid/i.test(String(err))
+      ? "Khoá Gemini không đúng hoặc đã bị xoá, hãy sao chép lại khoá từ aistudio.google.com/apikey"
+      : `Không kiểm tra được khoá Gemini: ${errorLine(err)}`);
+  }
+}
+
+/** Older keys look like "AIza…", newer ones like "AQ.Ab8…" with a dot. */
+const keySchema = z.string().trim()
+  .regex(/^[\w.-]{20,}$/, "Khoá Gemini không đúng dạng, hãy dán đúng khoá từ aistudio.google.com/apikey")
+  .nullable().optional();
+
+/** Each key: a string saves it (once Google accepts it), null removes it, left out keeps it. */
+app.put("/api/keys", async (req, res) => {
+  const body = z.object({ gemini: keySchema, geminiImage: keySchema }).parse(req.body);
+  for (const key of [body.gemini, body.geminiImage]) if (key) await checkGeminiKey(key);
+  const saved = getSavedKeys();
+  const keys = {
+    gemini: body.gemini === undefined ? saved.gemini : body.gemini,
+    geminiImage: body.geminiImage === undefined ? saved.geminiImage : body.geminiImage,
+  };
+  saveKeys(keys);
+  applyKeys(keys);
+  systemStatus = null;
+  res.json(keysView());
+});
+
+// ── Voices ──────────────────────────────────────────────────────────────────
 
 const PREVIEW_TEXT = "Xin chào, đây là giọng đọc thử. Đêm hôm ấy, trời mưa tầm tã, và câu chuyện của chúng ta bắt đầu từ một ngôi nhà nhỏ cuối làng.";
 const rateSchema = z.string().regex(/^[+-]\d{1,3}%$/, "Tốc độ đọc không hợp lệ");
@@ -170,9 +255,13 @@ const voiceSchema = z.string().refine(
   "Giọng đọc không hợp lệ",
 );
 
+/** A packaged copy writes with Gemini only, whatever an older saved setting says. */
+const providerSchema = (fallback: AiProvider) =>
+  z.enum(["claude", "gemini"]).default(fallback).transform((p): AiProvider => (RETAIL ? "gemini" : p));
+
 const settingsObject = z.object({
   styleId: z.string().min(1),
-  aiProvider: z.enum(["claude", "gemini"]).default("claude"),
+  aiProvider: providerSchema("claude"),
   voice: voiceSchema,
   rate: rateSchema,
   backgroundIds: z.array(z.string().min(1)).min(1, "Chọn ít nhất một video nền").transform((ids) => [...new Set(ids)]),
@@ -239,7 +328,8 @@ app.get("/api/jobs/:id", (req, res) => {
   res.json({ job, transcript: readIfExists(a.transcript), script: readIfExists(a.script), links: jobLinks(job) });
 });
 
-const linkSchema = z.url({ protocol: /^https?$/, error: "Link phải bắt đầu bằng http:// hoặc https://" });
+const linkSchema = z.url({ protocol: /^https?$/, error: "Link phải bắt đầu bằng http:// hoặc https://" })
+  .refine(() => !RETAIL, "Bản này không tải được video từ link, hãy tải file lên");
 
 /** yt-dlp failures become 400s: the link, not the server, is the problem. */
 async function probeOrReject(url: string) {
@@ -324,7 +414,7 @@ app.post("/api/jobs", upload.single("media"), async (req, res) => {
 const languageSchema = z.string().regex(/^[a-z]{2,3}$/, "Mã ngôn ngữ không hợp lệ");
 
 const summarySettingsSchema = z.object({
-  aiProvider: z.enum(["claude", "gemini"]).default(SUMMARY_DEFAULTS.aiProvider),
+  aiProvider: providerSchema(SUMMARY_DEFAULTS.aiProvider),
   targetSec: z.number().min(30, "Bản rút gọn dài ít nhất 30 giây").max(4 * 3600).nullable().default(SUMMARY_DEFAULTS.targetSec),
   focus: z.string().trim().max(2000, "Trọng tâm tóm tắt dài tối đa 2000 ký tự").default(SUMMARY_DEFAULTS.focus),
   language: z.union([z.literal(""), languageSchema]).default(""),
@@ -548,10 +638,11 @@ async function resolveDefaults(): Promise<DefaultSettings> {
   const styles = listStyles();
   const styleId = (styles.find((s) => s.prompt) ?? styles[0])?.id ?? "";
   const saved = getSavedDefaults();
-  if (saved) return getStyle(saved.styleId) ? saved : { ...saved, styleId };
+  const aiProvider: AiProvider = RETAIL ? "gemini" : saved?.aiProvider ?? BUILTIN_DEFAULTS.aiProvider;
+  if (saved) return { ...saved, aiProvider, styleId: getStyle(saved.styleId) ? saved.styleId : styleId };
   const installed = voiceProvider(BUILTIN_DEFAULTS.voice) !== "olvroc"
     || (await listOlvrocVoices().catch(() => [])).some((v) => v.id === BUILTIN_DEFAULTS.voice);
-  return { ...BUILTIN_DEFAULTS, styleId, voice: installed ? BUILTIN_DEFAULTS.voice : FALLBACK_VOICE };
+  return { ...BUILTIN_DEFAULTS, aiProvider, styleId, voice: installed ? BUILTIN_DEFAULTS.voice : FALLBACK_VOICE };
 }
 
 app.get("/api/defaults", async (_req, res) => {
@@ -570,9 +661,9 @@ app.put("/api/defaults", async (req, res) => {
 /** The saved summary defaults, or the built-in ones read by the voice new story jobs start with. */
 async function resolveSummaryDefaults(): Promise<SummarySettings> {
   const saved = getSavedSummaryDefaults();
-  if (saved) return saved;
+  if (saved) return RETAIL ? { ...saved, aiProvider: "gemini" } : saved;
   const { voice, rate } = await resolveDefaults();
-  return { ...SUMMARY_DEFAULTS, voice, rate };
+  return { ...SUMMARY_DEFAULTS, voice, rate, ...(RETAIL ? { aiProvider: "gemini" as const } : {}) };
 }
 
 app.get("/api/summary-defaults", async (_req, res) => {
@@ -703,26 +794,28 @@ function localPage(url: string | undefined): string {
   return "/";
 }
 
-app.get("/api/google/connect", (req, res) => {
-  const state = randomBytes(16).toString("hex");
-  const url = oauthUrl(state);
-  oauthReturns.set(state, localPage(req.get("referer")));
-  res.redirect(url);
-});
+if (!RETAIL) {
+  app.get("/api/google/connect", (req, res) => {
+    const state = randomBytes(16).toString("hex");
+    const url = oauthUrl(state);
+    oauthReturns.set(state, localPage(req.get("referer")));
+    res.redirect(url);
+  });
 
-app.get("/api/google/callback", async (req, res) => {
-  const { code, state, error } = z.object({
-    code: z.string().optional(), state: z.string().default(""), error: z.string().optional(),
-  }).parse(req.query);
-  const back = oauthReturns.get(state);
-  if (!back) throw new HttpError(400, "Phiên kết nối Google không hợp lệ hoặc đã hết hạn, hãy bấm \"Kết nối Google\" lại");
-  oauthReturns.delete(state);
-  if (error || !code) throw new HttpError(400, `Google từ chối kết nối: ${error ?? "thiếu mã xác nhận"}`);
-  const account = await finishOauth(code);
-  console.log(`Đã kết nối Google: ${account}`);
-  systemStatus = null;
-  res.redirect(back);
-});
+  app.get("/api/google/callback", async (req, res) => {
+    const { code, state, error } = z.object({
+      code: z.string().optional(), state: z.string().default(""), error: z.string().optional(),
+    }).parse(req.query);
+    const back = oauthReturns.get(state);
+    if (!back) throw new HttpError(400, "Phiên kết nối Google không hợp lệ hoặc đã hết hạn, hãy bấm \"Kết nối Google\" lại");
+    oauthReturns.delete(state);
+    if (error || !code) throw new HttpError(400, `Google từ chối kết nối: ${error ?? "thiếu mã xác nhận"}`);
+    const account = await finishOauth(code);
+    console.log(`Đã kết nối Google: ${account}`);
+    systemStatus = null;
+    res.redirect(back);
+  });
+}
 
 // ── Static files ────────────────────────────────────────────────────────────
 
@@ -750,7 +843,32 @@ if (!isLoopback(config.host) && config.host !== "localhost" && !config.apiToken)
   process.exit(1);
 }
 
-app.listen(config.port, config.host, () => {
+/**
+ * Open the app in the default browser: a packaged copy has no other window to
+ * show. STUDIO_NO_BROWSER=1 starts it without, e.g. to check a build.
+ */
+function openBrowser(url: string): void {
+  if (process.env.STUDIO_NO_BROWSER === "1") return;
+  spawn(process.env.ComSpec ?? "cmd.exe", ["/c", "start", "", url], { detached: true, stdio: "ignore", windowsHide: true })
+    .on("error", (err) => console.error(`Không mở được trình duyệt (${err.message}), hãy tự mở ${url}`))
+    .unref();
+}
+
+app.listen(config.port, config.host, (err?: Error) => {
+  const url = `http://127.0.0.1:${config.port}`;
+  if (err) {
+    // Opened again while already running: show the copy that runs.
+    if (RETAIL && (err as NodeJS.ErrnoException).code === "EADDRINUSE") {
+      console.log(`Story Studio đã đang chạy, mở ${url}`);
+      openBrowser(url);
+      process.exit(0);
+    }
+    throw err;
+  }
   console.log(`Story Studio đang chạy: http://${config.host}:${config.port}`);
+  if (RETAIL) {
+    console.log("Giữ cửa sổ này mở trong lúc dùng Story Studio. Đóng nó là tắt Story Studio.");
+    openBrowser(url);
+  }
   resumeOnStartup();
 });

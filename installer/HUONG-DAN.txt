@@ -1,0 +1,85 @@
+HƯỚNG DẪN SỬ DỤNG STORY STUDIO
+==============================
+
+Story Studio biến truyện audio, video thành các video ngắn có giọng đọc, phụ đề và ảnh bìa,
+sẵn sàng để đăng TikTok và YouTube. Mọi bước chạy ngay trên máy của bạn.
+
+
+1. MỞ STORY STUDIO
+------------------
+- Bấm đúp biểu tượng Story Studio trên Desktop (hoặc gõ "Story Studio" ở menu Start).
+- Một cửa sổ đen thu nhỏ xuống thanh tác vụ, rồi trình duyệt tự mở trang Story Studio.
+- Giữ cửa sổ đen đó trong lúc dùng: đóng nó là tắt Story Studio. Video đang làm dở sẽ được làm
+  tiếp ở lần mở sau.
+- Lỡ đóng trình duyệt thì mở lại địa chỉ: http://127.0.0.1:5178
+
+
+2. KÍCH HOẠT BẢN QUYỀN (làm một lần)
+------------------------------------
+- Lần đầu mở, Story Studio hiện MÃ MÁY, ví dụ 7F3A-91C2-04BE-D5E1. Bấm Sao chép rồi gửi mã này
+  cho người bán.
+- Dán KHOÁ BẢN QUYỀN nhận được (bắt đầu bằng SS1-) vào ô bên dưới rồi bấm Kích hoạt.
+- Mỗi khoá chỉ dùng được trên một máy. Cài lại Windows hoặc đổi máy thì mã máy đổi theo: gửi mã
+  mới cho người bán để được cấp lại khoá.
+
+
+3. NHẬP KHOÁ GEMINI (làm một lần, miễn phí)
+-------------------------------------------
+Gemini là AI của Google, dùng để viết lại kịch bản, viết truyện theo chủ đề, tóm tắt video và
+gợi ý tiêu đề, mô tả, hashtag.
+- Vào https://aistudio.google.com/apikey , đăng nhập tài khoản Google, bấm "Create API key" rồi
+  sao chép khoá.
+- Trong Story Studio mở Cài đặt, dán vào ô Khoá Gemini rồi bấm Lưu.
+- Gói miễn phí của Google giới hạn số lượt dùng mỗi ngày. Hết lượt thì chờ sang ngày hôm sau.
+- Không bắt buộc: ảnh bìa YouTube có hình nhân vật do Gemini vẽ cần khoá của một dự án Google
+  đã bật thanh toán (khoảng 0,034 USD một ảnh, mỗi truyện một ảnh). Dán khoá đó vào ô
+  "Khoá vẽ ảnh bìa YouTube". Không có thì ảnh bìa dùng khung hình của video nền.
+
+
+4. THÊM VIDEO NỀN
+-----------------
+- Mở Thư viện rồi kéo thả vài video (mp4, mov, mkv…) để làm hình nền phía sau giọng đọc.
+- Cũng ở Thư viện, đặt tên kênh để in lên mọi video.
+
+
+5. TẠO VIDEO
+------------
+- Bấm "Tạo video mới". Chọn file truyện (audio hoặc video) trên máy, hoặc để AI tự viết truyện
+  theo chủ đề bạn đưa ra.
+- Chọn phong cách, giọng đọc, định dạng (TikTok, YouTube) rồi bấm bắt đầu.
+- Lần đầu nhận dạng giọng nói, Story Studio tải model Whisper (khoảng 1,6 GB) về máy, mất vài
+  phút đến vài chục phút tuỳ tốc độ mạng. Những lần sau không phải tải lại.
+- Giọng OlvRoc chạy hoàn toàn trên máy. Giọng Edge TTS (Hoài My, Nam Minh) cần có mạng và dùng
+  dịch vụ của Microsoft, đôi khi không đọc được: khi đó hãy chọn một giọng OlvRoc.
+- Làm xong, mở video để tải về và sao chép tiêu đề, mô tả, hashtag khi đăng bài.
+
+
+6. DỮ LIỆU CỦA BẠN
+------------------
+- Video, thư viện, cài đặt và khoá bản quyền nằm ở thư mục:
+      %LOCALAPPDATA%\Story Studio
+  (dán dòng trên vào thanh địa chỉ của File Explorer để mở).
+- Cập nhật hay gỡ Story Studio đều không xoá thư mục này. Muốn xoá hẳn thì xoá nó bằng tay.
+- Video chiếm nhiều dung lượng: xoá bớt video cũ trong Story Studio khi không cần nữa.
+
+
+7. CÀI ĐẶT, CẬP NHẬT, GỠ
+------------------------
+- Khi chạy bộ cài, Windows có thể báo "Windows protected your PC": bấm "More info" rồi
+  "Run anyway".
+- Cập nhật: chạy bộ cài của bản mới, không cần gỡ bản cũ.
+- Gỡ: Settings > Apps > Installed apps > Story Studio > Uninstall.
+
+
+8. KHI GẶP LỖI
+--------------
+- Cửa sổ đen báo lỗi rồi dừng: chụp màn hình cửa sổ đó gửi người bán.
+- Mục Hệ thống ở góc dưới bên trái có chấm đỏ: rê chuột vào để xem lý do. FFmpeg, Whisper hay
+  OlvRoc báo lỗi thì cài lại Story Studio.
+- Một video báo lỗi ở bước nào đó: mở video đó và bấm Thử lại.
+
+
+YÊU CẦU MÁY
+-----------
+Windows 10 hoặc 11 bản 64-bit, RAM từ 8 GB (nên có 16 GB), ổ đĩa còn trống từ 10 GB, có mạng
+khi dùng Gemini, giọng Edge TTS và lần đầu tải model Whisper.

@@ -2,7 +2,9 @@ import type {
   AiProvider, Background, BackgroundLook, Brand, DefaultSettings, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
   SummaryClip, SummaryResult, SummarySettings, VideoFormat, Voice,
 } from "../../server/types";
+import type { LicenseStatus } from "../../server/lib/license";
 
+export type { LicenseStatus };
 export type {
   AiProvider, Background, BackgroundLook, Brand, DefaultSettings, FitMode, Job, JobPart, JobSettings, JobStatus, LogEntry, LogLevel, SourceInfo, Step, Style, SystemStatus,
   SummaryClip, SummaryResult, SummarySettings, VideoFormat, Voice,
@@ -15,6 +17,22 @@ export interface Meta {
   geminiModel: string;
   whisperModel: string;
   system: SystemStatus;
+}
+
+/** The saved Gemini keys, shortened so the page never holds a whole key. */
+export interface GeminiKeys {
+  gemini: string | null;
+  geminiImage: string | null;
+  /** A key is in use, saved here or from .env.local. */
+  geminiReady: boolean;
+}
+
+/** Fired when the server refuses a request because this copy needs a (new) licence key. */
+export const LICENSE_EVENT = "story-studio:license";
+
+/** Show the activation screen when the server answers that the licence is missing or has run out. */
+function checkLicense(data: unknown): void {
+  if ((data as { license?: boolean }).license) window.dispatchEvent(new Event(LICENSE_EVENT));
 }
 
 export interface JobDetail {
@@ -31,7 +49,10 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   });
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? `Lỗi ${res.status}`);
+  if (!res.ok) {
+    checkLicense(data);
+    throw new Error((data as { error?: string }).error ?? `Lỗi ${res.status}`);
+  }
   return data as T;
 }
 
@@ -45,8 +66,9 @@ function upload<T>(url: string, form: FormData, onProgress: (fraction: number) =
       const data = (() => {
         try { return JSON.parse(xhr.responseText); } catch { return {}; }
       })();
-      if (xhr.status >= 200 && xhr.status < 300) resolve(data as T);
-      else reject(new Error(data.error ?? `Lỗi ${xhr.status}`));
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data as T);
+      checkLicense(data);
+      reject(new Error(data.error ?? `Lỗi ${xhr.status}`));
     };
     xhr.onerror = () => reject(new Error("Mất kết nối tới server"));
     xhr.send(form);
@@ -55,6 +77,12 @@ function upload<T>(url: string, form: FormData, onProgress: (fraction: number) =
 
 export const api = {
   meta: (recheck = false) => request<Meta>("GET", `/api/meta${recheck ? "?recheck=1" : ""}`),
+
+  license: () => request<LicenseStatus>("GET", "/api/license"),
+  activateLicense: (key: string) => request<LicenseStatus>("PUT", "/api/license", { key }),
+  keys: () => request<GeminiKeys>("GET", "/api/keys"),
+  /** A string saves that key, null removes it, a key left out stays as it is. */
+  saveKeys: (keys: { gemini?: string | null; geminiImage?: string | null }) => request<GeminiKeys>("PUT", "/api/keys", keys),
 
   jobs: () => request<Job[]>("GET", "/api/jobs"),
   job: (id: string) => request<JobDetail>("GET", `/api/jobs/${id}`),

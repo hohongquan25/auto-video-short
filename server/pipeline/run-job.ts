@@ -19,6 +19,7 @@ import { preparePublish } from "./publish.js";
 import { removeCoverArt } from "./cover-art.js";
 import { uploadToDrive } from "./upload.js";
 import { googleConfigured } from "../lib/google.js";
+import { RETAIL } from "../edition.js";
 
 const LOG_LIMIT = 500;
 
@@ -234,7 +235,7 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
   const a = artifacts(job.id);
 
   // ── 0. Download (jobs created from a link) ──────────────────────────────
-  if (job.sourceUrl && !job.sourceFile) {
+  if (!RETAIL && job.sourceUrl && !job.sourceFile) {
     const info = job.sourceInfo;
     enter("download", `Bắt đầu tải audio từ ${info?.platform ?? "link"}: ${job.sourceUrl}`);
     if (info) {
@@ -407,7 +408,7 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
   job.publish.channel = brand.text.trim() || null;
 
   // ── 8. Upload (when Google is set up) ───────────────────────────────────
-  if (googleConfigured()) {
+  if (!RETAIL && googleConfigured()) {
     enter("upload", "Bắt đầu lưu video lên Google Drive và ghi vào Google Sheet");
     await uploadToDrive(job, a.partsDir, r);
   }

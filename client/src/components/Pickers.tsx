@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { FORMAT_ORDER, VIDEO_FORMATS, formatDuration, formatPlan, lookStyle, playAt, stripExt } from "../format";
 import { useLibrary } from "../useLibrary";
+import { RETAIL } from "../edition";
 import { FileDrop } from "./FileDrop";
 import { BACKGROUNDS_PER_PAGE, Pager, usePaging } from "./Pager";
 import { errorMessage, useToast } from "./Toast";
@@ -35,8 +36,9 @@ function ProviderFix({ meta, provider }: { meta: Meta; provider: AiProvider }) {
         </div>
       ) : (
         <div>
-          Chưa có <code>GEMINI_API_KEY</code> trong <code>.env.local</code>. Lấy key miễn phí tại{" "}
-          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a> rồi khởi động lại server.
+          Chưa có khoá Gemini. Lấy khoá miễn phí tại{" "}
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a> rồi dán vào{" "}
+          <Link to="/settings#keys">trang Cài đặt</Link>.
         </div>
       )}
     </div>
@@ -46,6 +48,8 @@ function ProviderFix({ meta, provider }: { meta: Meta; provider: AiProvider }) {
 export function ProviderPicker({ value, set, meta, label = "AI dùng để viết lại" }: {
   value: { aiProvider: AiProvider }; set: (patch: { aiProvider: AiProvider }) => void; meta: Meta; label?: string;
 }) {
+  // Gemini is the only AI of a packaged copy: nothing to choose, only a missing key to point out.
+  if (RETAIL) return <ProviderFix meta={meta} provider="gemini" />;
   const c = meta.system.claude;
   const options: { id: AiProvider; title: string; desc: string; status: string }[] = [
     {

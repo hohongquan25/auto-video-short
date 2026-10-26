@@ -7,6 +7,7 @@ import { BACKGROUNDS_PER_PAGE, Pager, usePaging } from "../components/Pager";
 import { errorMessage, useToast } from "../components/Toast";
 import { BACKGROUND_SPEEDS, formatDuration, formatSpeed, lookStyle, playAt, stripExt } from "../format";
 import { useLibrary } from "../useLibrary";
+import { RETAIL } from "../edition";
 
 function BackgroundCard({ bg, onLook, onDelete }: { bg: Background; onLook: (patch: BackgroundLook) => void; onDelete: () => void }) {
   const video = useRef<HTMLVideoElement | null>(null);
@@ -193,7 +194,7 @@ function StylesSection() {
       <div className="section-head">
         <div>
           <h2>Phong cách viết lại</h2>
-          <p className="small muted">Mô tả giọng văn để AI (Claude hoặc Gemini) kể lại câu chuyện. Nội dung và tình tiết luôn được giữ nguyên.</p>
+          <p className="small muted">Mô tả giọng văn để AI ({RETAIL ? "Gemini" : "Claude hoặc Gemini"}) kể lại câu chuyện. Nội dung và tình tiết luôn được giữ nguyên.</p>
         </div>
         {editing === null && <button onClick={() => setEditing("new")}><Plus size={15} /> Thêm phong cách</button>}
       </div>
@@ -301,7 +302,7 @@ function BrandSection() {
           </label>
           <label className="field">
             <span className="field-label">Tên kênh</span>
-            <input type="text" value={draft.text} maxLength={60} placeholder="Ví dụ: Gác trọ Audio" onChange={(e) => set({ text: e.target.value })} />
+            <input type="text" value={draft.text} maxLength={60} placeholder="Ví dụ: Truyện Đêm Khuya" onChange={(e) => set({ text: e.target.value })} />
           </label>
           <div className="field-label">Vị trí</div>
           <div className="seg-control">

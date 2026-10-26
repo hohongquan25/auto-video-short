@@ -16,6 +16,7 @@ import { errorMessage, useToast } from "../components/Toast";
 import { AI_PROVIDER_LABELS, VIDEO_FORMATS, formatBytes, formatDuration, formatPlan, stripExt } from "../format";
 import { useLibrary } from "../useLibrary";
 import { useMediaInfo } from "../useMediaInfo";
+import { RETAIL } from "../edition";
 
 const WIZARD = [
   { key: "source", label: "Nguồn truyện", icon: FileAudio },
@@ -88,7 +89,7 @@ export function NewJobPage() {
     });
   }
   if ((style?.prompt || mode === "topic") && !providerReady(meta, settings.aiProvider)) {
-    const text = settings.aiProvider === "claude" ? "Claude Code chưa đăng nhập" : "Chưa có GEMINI_API_KEY";
+    const text = settings.aiProvider === "claude" ? "Claude Code chưa đăng nhập" : "Chưa có khoá Gemini";
     // A topic job cannot do anything without the AI; a rewrite job would at least fail at a clear step.
     problems.push(mode === "topic"
       ? { step: 1, text: `${text}, AI không thể viết truyện` }
@@ -227,9 +228,11 @@ export function NewJobPage() {
                 <button type="button" className={mode === "file" ? "on" : ""} onClick={() => setMode("file")}>
                   <b><Upload size={15} /> Tải file lên</b><span>video hoặc audio trên máy</span>
                 </button>
-                <button type="button" className={mode === "link" ? "on" : ""} onClick={() => setMode("link")}>
-                  <b><Link2 size={15} /> Dán link video</b><span>YouTube, TikTok, Facebook…</span>
-                </button>
+                {!RETAIL && (
+                  <button type="button" className={mode === "link" ? "on" : ""} onClick={() => setMode("link")}>
+                    <b><Link2 size={15} /> Dán link video</b><span>YouTube, TikTok, Facebook…</span>
+                  </button>
+                )}
                 <button type="button" className={mode === "topic" ? "on" : ""} onClick={() => setMode("topic")}>
                   <b><PenLine size={15} /> AI tự viết truyện</b><span>theo chủ đề bạn đưa ra</span>
                 </button>

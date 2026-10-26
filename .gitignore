@@ -7,3 +7,5 @@ models/
 .env.local
 *.log
 __pycache__/
+release/
+build-cache/
