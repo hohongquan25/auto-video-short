@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { balancedLines, coverText, wrapLines } from "../server/lib/cover.js";
-import { cleanHashtags, kitPrompt, parseKit, storyExcerpt } from "../server/pipeline/publish.js";
+import { coverArtPrompt } from "../server/pipeline/cover-art.js";
+import { cleanHashtags, coverPrompt, kitPrompt, parseCover, parseKit, storyExcerpt } from "../server/pipeline/publish.js";
 import { nextSeriesTag, postFor, type PublishKit } from "../server/types.js";
 
 describe("cover text", () => {
@@ -60,6 +61,32 @@ describe("publish kit", () => {
     expect(kitPrompt({ ...base, webSearch: true })).toContain("Tìm trên web");
     expect(kitPrompt({ ...base, webSearch: false })).not.toContain("Tìm trên web");
     expect(kitPrompt({ ...base, webSearch: true })).toContain("đúng 2 câu");
+  });
+
+  it("asks for the YouTube cover's texts and picture only when there is a YouTube video", () => {
+    const base = { title: "T", channel: null, story: "s", partTexts: ["p1"], webSearch: false };
+    const withYoutube = kitPrompt({ ...base, youtube: true });
+    expect(withYoutube).toContain('"coverImage": "bằng tiếng Anh');
+    expect(withYoutube).toContain('"coverLines": ["storyName viết hoa');
+    expect(kitPrompt({ ...base, youtube: false })).not.toContain("coverImage");
+    expect(coverPrompt({ name: "Lời khai của kẻ mù", story: "s" })).toContain("tên truyện LỜI KHAI CỦA KẺ MÙ, chia thành");
+  });
+
+  it("reads the YouTube cover's fields, which kits written before them lack", () => {
+    const reply = '{"titles":["A"],"coverText":"B","caption":"C","hashtags":["x"],"coverImage":" A blind old man ","coverLabel":"TRUYỆN MA AUDIO FULL","coverLines":["LỜI KHAI"," ","CỦA KẺ MÙ"]}';
+    expect(parseKit(reply, "AI", 0, true)).toMatchObject({ coverImage: "A blind old man", coverLabel: "TRUYỆN MA AUDIO FULL", coverLines: ["LỜI KHAI", "CỦA KẺ MÙ"] });
+    expect(parseKit('{"titles":["A"],"coverText":"B","caption":"C","hashtags":["x"]}', "AI", 0, true))
+      .toMatchObject({ coverImage: null, coverLabel: null, coverLines: null });
+    expect(parseCover('{"coverImage":"An old man","coverLines":["A"]}')).toEqual({ coverImage: "An old man", coverLabel: null, coverLines: ["A"] });
+    expect(() => parseCover('{"coverLabel":"X"}')).toThrow();
+  });
+
+  it("asks Gemini for the described character on a white page, or the story's premise without a description", () => {
+    const kit = { by: "AI", niche: { genre: "truyện ma", audience: "", similar: [], insight: "" }, titles: ["T"], storyName: "Lời khai của kẻ mù", coverText: "", caption: "Một lời khai lạ", hashtags: [], partHooks: [], youtube: null };
+    const described = coverArtPrompt({ ...kit, coverImage: "A blind old man holding a cane" });
+    expect(described.startsWith("A blind old man holding a cane\n\n")).toBe(true);
+    expect(described).toContain("plain seamless pure white background");
+    expect(coverArtPrompt(kit)).toContain('"Lời khai của kẻ mù" (truyện ma): Một lời khai lạ');
   });
 
   it("asks for the five hashtags TikTok takes, without generic ones, and a short name for TikTok", () => {

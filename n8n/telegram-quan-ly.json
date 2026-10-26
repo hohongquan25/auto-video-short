@@ -673,6 +673,7 @@
           "value": "ssTikTokDangVid1",
           "mode": "id"
         },
+        "mode": "each",
         "workflowInputs": {
           "mappingMode": "defineBelow",
           "value": {},
@@ -735,6 +736,7 @@
           "value": "ssYouTubeDangVd1",
           "mode": "id"
         },
+        "mode": "each",
         "workflowInputs": {
           "mappingMode": "defineBelow",
           "value": {},

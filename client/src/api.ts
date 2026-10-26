@@ -75,6 +75,7 @@ export const api = {
   rerun: (id: string, fromStep?: Step, settings?: JobSettings) =>
     request<Job>("POST", `/api/jobs/${id}/rerun`, { fromStep, settings }),
   stop: (id: string) => request<Job>("POST", `/api/jobs/${id}/stop`),
+  redrawYoutubeCovers: (id: string) => request<Job>("POST", `/api/jobs/${id}/youtube-covers`),
   renameJob: (id: string, title: string) => request<Job>("PATCH", `/api/jobs/${id}`, { title }),
   deleteJob: (id: string) => request<void>("DELETE", `/api/jobs/${id}`),
 

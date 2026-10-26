@@ -61,6 +61,10 @@ export const config = {
   clientDist: join(root, "dist", "client"),
   geminiApiKey: env("GEMINI_API_KEY"),
   geminiModel: env("GEMINI_MODEL") ?? "gemini-flash-latest",
+  /** Drawing has no free tier, so its key may be one of a project with billing (or Google AI Pro credits). */
+  geminiImageApiKey: env("GEMINI_IMAGE_API_KEY") ?? env("GEMINI_API_KEY"),
+  /** Unset: the cheapest current models, each tried in turn while Google does not know the name. */
+  geminiImageModel: env("GEMINI_IMAGE_MODEL"),
   claudePath: env("CLAUDE_PATH") ?? findClaude(),
   claudeModel: env("CLAUDE_MODEL") ?? "sonnet",
   /** Same Python as Whisper: `pnpm setup:whisper` installs what python/olvroc needs too. */
@@ -68,6 +72,8 @@ export const config = {
   /** Model files (~650 MB, kept out of git), downloaded by `pnpm setup:olvroc`. */
   olvrocModelDir: join(root, "models", "olvroc"),
   olvrocScript: join(root, "python", "olvroc_tts.py"),
+  /** Fonts the covers are set in, kept with the app so they look the same on every machine. */
+  fontsDir: join(root, "assets", "fonts"),
   /** fp32 = best quality; int8 = ~1.6x faster on CPUs with VNNI, garbled audio on older ones. */
   olvrocPrecision: checkedEnv("OLVROC_PRECISION", /^(fp32|int8)$/, "fp32") ?? "fp32",
   whisperModel: env("WHISPER_MODEL") ?? "large-v3-turbo",

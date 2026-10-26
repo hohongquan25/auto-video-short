@@ -43,6 +43,7 @@ Lưu ý:
 - Telegram chỉ cho mỗi bot một webhook. Không bật workflow nào khác dùng Telegram Trigger hoặc `getUpdates` với bot này (workflow cũ `Telegram - Nhận nút bấm` đã được thay, file của nó còn trong lịch sử git).
 - Đang bật trang quản lý thì đừng bấm **Listen for test event** / **Execute workflow** trên node Telegram: n8n chuyển webhook sang địa chỉ thử và bot ngừng trả lời. Lỡ bấm thì Unpublish rồi Publish lại workflow.
 - Lịch ghi trên màn hình lấy từ ô `lich_tiktok`, `lich_youtube` ở node **Cấu hình**: đổi giờ chạy của workflow TikTok/YouTube thì sửa cả hai ô này.
+- Node **Gửi TikTok tiếp** và **Đăng YouTube ngay** phải để **Mode = Run once for each item** (`"mode": "each"`). Ở chế độ mặc định (chạy một lần cho mọi item), kèm không chờ workflow con và có nhánh lỗi riêng, n8n 2.42 làm rỗng dữ liệu gửi sang workflow con trước khi nó kịp chạy: workflow con dừng ngay ở node đầu, không báo lỗi, nút bấm không đăng gì.
 - Cập nhật các workflow này lên VPS: xem `vps/README.md`, mục **Cập nhật workflow**.
 
 ## Kết nối YouTube

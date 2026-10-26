@@ -13,6 +13,7 @@ import {
 import { cancel, enqueue, isBusy, liveJob, notify, resumeOnStartup } from "./queue.js";
 import { jobLinks } from "./webhook.js";
 import { appendLog, artifacts, resetFromStep } from "./pipeline/run-job.js";
+import { removeCoverArt } from "./pipeline/cover-art.js";
 import { synthesizeToFile } from "./pipeline/tts.js";
 import { ffmpegVersion, hasVideoStream, probeDuration } from "./lib/ffmpeg.js";
 import { run } from "./lib/proc.js";
@@ -442,6 +443,30 @@ app.post("/api/jobs/:id/rerun", async (req, res) => {
   job.error = null;
   if (body.settings || body.summary) appendLog(job, "Đã cập nhật cài đặt");
   appendLog(job, body.fromStep ? `Chạy lại từ bước "${STEP_LABELS[body.fromStep]}"` : "Thử lại từ bước bị lỗi");
+  saveJob(job);
+  enqueue(job.id);
+  res.json(job);
+});
+
+/**
+ * Draw the YouTube covers again with a new picture, keeping the post texts.
+ * Running the job again redraws only what is missing and sends the new
+ * covers to Drive in place of the old ones.
+ */
+app.post("/api/jobs/:id/youtube-covers", (req, res) => {
+  const job = loadJob(req.params.id);
+  assertIdle(job);
+  const youtube = job.outputs.find((o) => o.format === "youtube");
+  if (!youtube || !job.publish) throw new HttpError(400, "Job này chưa có video YouTube đã làm xong");
+  const a = artifacts(job.id);
+  removeCoverArt(a.dir);
+  for (const v of [...youtube.parts, ...(youtube.fullVideo ? [youtube.fullVideo] : [])]) {
+    if (v.cover) rmSync(join(a.partsDir, v.cover), { force: true });
+    delete v.cover;
+  }
+  job.status = "queued";
+  job.error = null;
+  appendLog(job, "Vẽ lại ảnh bìa YouTube với hình minh hoạ mới");
   saveJob(job);
   enqueue(job.id);
   res.json(job);

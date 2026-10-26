@@ -139,6 +139,12 @@ export interface PublishKit {
   seriesTag?: string | null;
   /** The channel name (from the brand settings) ending the name of whole-story videos; null when there is none. */
   channel?: string | null;
+  /** In English, who the picture on the YouTube cover shows; missing from kits written before it was asked for. */
+  coverImage?: string | null;
+  /** The genre line on the YouTube cover, e.g. "TRUYỆN MA AUDIO FULL". */
+  coverLabel?: string | null;
+  /** The short name split into lines at natural breaks, for the YouTube cover. */
+  coverLines?: string[] | null;
 }
 
 /**
@@ -168,8 +174,8 @@ export function postHashtags(kit: PublishKit, format: VideoFormat, part: { index
   return kit.hashtags.slice(0, !part && kit.seriesTag ? TIKTOK_HASHTAGS - 1 : TIKTOK_HASHTAGS);
 }
 
-/** A kit without the AI's short name (written before it was asked for) takes it from the best title. */
-const nameOf = (kit: PublishKit) => kit.storyName || storyNameFromTitle(kit.titles[0] ?? "") || (kit.titles[0] ?? "");
+/** The story's short name; a kit without the AI's (written before it was asked for) takes it from the best title. */
+export const storyNameOf = (kit: PublishKit): string => kit.storyName || storyNameFromTitle(kit.titles[0] ?? "") || (kit.titles[0] ?? "");
 
 /** YouTube takes titles of at most this many characters. */
 const YOUTUBE_TITLE_CHARS = 100;
@@ -181,7 +187,7 @@ const YOUTUBE_TITLE_CHARS = 100;
  */
 export function fullVideoName(kit: PublishKit): string {
   const tail = " (Truyện Full)" + (kit.seriesTag ? ` ${kit.seriesTag}` : "") + (kit.channel ? ` | ${kit.channel}` : "");
-  const name = nameOf(kit);
+  const name = storyNameOf(kit);
   const room = YOUTUBE_TITLE_CHARS - tail.length;
   return (name.length <= room ? name : `${name.slice(0, room - 1).replace(/\s+\S*$/, "")}…`) + tail;
 }
@@ -201,7 +207,7 @@ export function postFor(kit: PublishKit, format: VideoFormat, part: { index: num
     const title = part ? (kit.titles[0] ?? "") + suffix : fullVideoName(kit);
     return { title: null, description: [title, hook, kit.hashtags.join(" ")].filter(Boolean).join("\n\n"), tags: [] };
   }
-  const name = part ? nameOf(kit) + suffix : fullVideoName(kit);
+  const name = part ? storyNameOf(kit) + suffix : fullVideoName(kit);
   return { title: null, description: [name, postHashtags(kit, format, part).join(" ")].filter(Boolean).join("\n\n"), tags: [] };
 }
 

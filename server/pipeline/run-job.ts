@@ -16,6 +16,7 @@ import { writeStory } from "./write.js";
 import { synthesizeScript } from "./tts.js";
 import { renderParts } from "./render.js";
 import { preparePublish } from "./publish.js";
+import { removeCoverArt } from "./cover-art.js";
 import { uploadToDrive } from "./upload.js";
 import { googleConfigured } from "../lib/google.js";
 
@@ -87,6 +88,7 @@ export function resetFromStep(job: Job, fromStep: Step): void {
   }
   if (at("publish")) {
     rmSync(a.publishKit, { force: true });
+    removeCoverArt(a.dir);
     for (const v of job.outputs.flatMap((o) => [...o.parts, ...(o.fullVideo ? [o.fullVideo] : [])])) {
       if (v.cover) rmSync(join(a.partsDir, v.cover), { force: true });
       delete v.cover;
@@ -394,6 +396,7 @@ export async function runJob(job: Job, signal: AbortSignal): Promise<void> {
     provider: job.settings.aiProvider,
     partsDir: a.partsDir,
     kitFile: a.publishKit,
+    artDir: a.dir,
     backgrounds,
     fit: job.settings.fit,
     brand,

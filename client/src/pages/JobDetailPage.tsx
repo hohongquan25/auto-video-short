@@ -401,6 +401,7 @@ export function JobDetailPage() {
           <PublishTab
             job={job} busy={busy}
             onRegenerate={() => act(() => api.rerun(job.id, "publish"), "Đang tạo lại gợi ý đăng bài")}
+            onRedrawYoutube={() => act(() => api.redrawYoutubeCovers(job.id), "Đang vẽ lại ảnh bìa YouTube")}
           />
         )}
 
