@@ -1,2 +1,5 @@
 # Script chạy trên VPS (Linux): luôn giữ xuống dòng LF, kể cả khi checkout trên Windows.
 *.sh text eol=lf
+# Windows đọc file .cmd và .iss theo kiểu xuống dòng CRLF.
+*.cmd text eol=crlf
+*.iss text eol=crlf

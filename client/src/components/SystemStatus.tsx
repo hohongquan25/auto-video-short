@@ -2,6 +2,10 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Check, CircleAlert, Minus, RefreshCw } from "lucide-react";
 import { useLibrary } from "../useLibrary";
+import { RETAIL } from "../edition";
+
+/** A packaged copy brings its own ffmpeg, Python and voices, so a broken one is fixed by installing again. */
+const REINSTALL = "Cài lại Story Studio";
 
 interface Item {
   key: string;
@@ -23,14 +27,14 @@ export function useSystemItems(): Item[] | null {
     {
       key: "ffmpeg", label: "FFmpeg", ok: s.ffmpeg.ok,
       detail: s.ffmpeg.ok ? `Phiên bản ${s.ffmpeg.version}` : "Không tìm thấy ffmpeg",
-      fix: "Cài ffmpeg (winget install Gyan.FFmpeg) hoặc đặt FFMPEG_PATH trong .env.local",
+      fix: RETAIL ? REINSTALL : "Cài ffmpeg (winget install Gyan.FFmpeg) hoặc đặt FFMPEG_PATH trong .env.local",
     },
     {
       key: "whisper", label: `Whisper (${meta.whisperModel})`, ok: s.whisper.ok,
       detail: s.whisper.ok ? "faster-whisper sẵn sàng" : s.whisper.error ?? "Chưa cài faster-whisper",
-      fix: "Chạy: pnpm setup:whisper",
+      fix: RETAIL ? REINSTALL : "Chạy: pnpm setup:whisper",
     },
-    {
+    ...(RETAIL ? [] : [{
       key: "ytdlp", label: "Tải từ link (yt-dlp)", ok: s.ytdlp.ok, optional: true,
       detail: s.ytdlp.ok
         ? `Phiên bản ${s.ytdlp.version}${s.ytdlp.cookies ? ` · cookie từ ${s.ytdlp.cookies}` : " · chưa có cookie (YouTube có thể chặn)"}`
@@ -45,18 +49,20 @@ export function useSystemItems(): Item[] | null {
       fix: s.claude.installed
         ? "Mở terminal, chạy: claude, rồi đăng nhập tài khoản Claude"
         : "Cài: npm i -g @anthropic-ai/claude-code, rồi chạy: claude để đăng nhập",
-    },
+    }]),
     {
       key: "olvroc", label: "OlvRoc", ok: s.olvroc.ok, optional: true,
       detail: s.olvroc.ok ? `${s.olvroc.voices} giọng tiếng Việt miễn phí` : s.olvroc.error ?? "Chưa cài",
-      fix: "Chạy: pnpm setup:whisper (thư viện) và pnpm setup:olvroc (model ~520 MB)",
+      fix: RETAIL ? REINSTALL : "Chạy: pnpm setup:whisper (thư viện) và pnpm setup:olvroc (model ~520 MB)",
     },
     {
-      key: "gemini", label: "Gemini", ok: s.gemini.ok, optional: true,
-      detail: s.gemini.ok ? s.gemini.model : "Chưa có API key",
-      fix: "Thêm GEMINI_API_KEY vào .env.local rồi khởi động lại server",
+      // The packaged app has no other AI, so it needs the key.
+      key: "gemini", label: "Gemini", ok: s.gemini.ok, optional: !RETAIL,
+      detail: s.gemini.ok ? s.gemini.model : "Chưa có khoá Gemini",
+      fix: "Lấy khoá miễn phí ở aistudio.google.com/apikey rồi dán vào trang Cài đặt",
+      link: s.gemini.ok ? undefined : { href: "/settings#keys", label: "Nhập khoá" },
     },
-    {
+    ...(RETAIL ? [] : [{
       key: "google", label: "Google Drive & Sheet", ok: s.google.ok, optional: true,
       detail: s.google.ok
         ? `${s.google.account ?? "Đã kết nối"} · ${s.google.folderUrl ? "lưu vào thư mục đã chọn" : "sẽ tự tạo thư mục \"Story Studio\""}`
@@ -65,7 +71,7 @@ export function useSystemItems(): Item[] | null {
         ? "Bấm \"Kết nối Google\" và đăng nhập tài khoản sẽ chứa video"
         : "Điền mục Google Drive trong .env.local (xem .env.example và docs/n8n.md) rồi khởi động lại server",
       link: s.google.canConnect ? { href: "/api/google/connect", label: s.google.ok ? "Kết nối lại" : "Kết nối Google" } : undefined,
-    },
+    }]),
   ];
 }
 

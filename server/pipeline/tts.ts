@@ -29,11 +29,22 @@ export interface TtsSegment {
   durationSec: number;
 }
 
+/** Edge TTS can accept the connection and then never answer; past this the attempt fails, so it is retried. */
+const EDGE_TIMEOUT_MS = 60_000;
+
 export async function synthesizeToFile(text: string, voice: string, rate: string, outFile: string): Promise<void> {
-  const result = await new EdgeTTS(text, voice, { rate }).synthesize();
-  const buffer = Buffer.from(await result.audio.arrayBuffer());
-  if (buffer.length === 0) throw new Error("Edge TTS trả về audio rỗng");
-  writeFileSync(outFile, buffer);
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Edge TTS không trả lời sau ${EDGE_TIMEOUT_MS / 1000} giây`)), EDGE_TIMEOUT_MS);
+  });
+  try {
+    const result = await Promise.race([new EdgeTTS(text, voice, { rate }).synthesize(), timeout]);
+    const buffer = Buffer.from(await result.audio.arrayBuffer());
+    if (buffer.length === 0) throw new Error("Edge TTS trả về audio rỗng");
+    writeFileSync(outFile, buffer);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

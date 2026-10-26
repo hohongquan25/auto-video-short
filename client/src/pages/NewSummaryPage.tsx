@@ -9,6 +9,7 @@ import { SummarySettingsForm, summaryProblems } from "../components/SummarySetti
 import { errorMessage, useToast } from "../components/Toast";
 import { SUMMARY_DEFAULTS, formatBytes, formatDuration } from "../format";
 import { useLibrary } from "../useLibrary";
+import { RETAIL } from "../edition";
 import { useMediaInfo } from "../useMediaInfo";
 
 const VIDEO_ACCEPT = "video/*,.mkv";
@@ -106,9 +107,11 @@ export function NewSummaryPage() {
           <button type="button" className={mode === "file" ? "on" : ""} onClick={() => setMode("file")}>
             <b><Upload size={15} /> Tải video lên</b><span>video trên máy</span>
           </button>
-          <button type="button" className={mode === "link" ? "on" : ""} onClick={() => setMode("link")}>
-            <b><Link2 size={15} /> Dán link video</b><span>YouTube, TikTok, Facebook…</span>
-          </button>
+          {!RETAIL && (
+            <button type="button" className={mode === "link" ? "on" : ""} onClick={() => setMode("link")}>
+              <b><Link2 size={15} /> Dán link video</b><span>YouTube, TikTok, Facebook…</span>
+            </button>
+          )}
         </div>
         {mode === "link" ? (
           <LinkSource link={link} setLink={setLink} probe={probe} ytdlpOk={meta.system.ytdlp.ok} />

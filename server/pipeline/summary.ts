@@ -10,6 +10,7 @@ import { formatBytes, formatChars, formatDuration, formatSpeed } from "../lib/fo
 import { buildAss, buildCues, subtitleLayout } from "../lib/subtitles.js";
 import { chunkText } from "../lib/text.js";
 import { downloadCaptions, downloadVideo } from "../lib/ytdlp.js";
+import { RETAIL } from "../edition.js";
 import {
   OLVROC_PREFIX, SHORT_OF_SUGGESTED, TTS_PROVIDER_LABELS, VIDEO_FORMATS, languageLabel, voiceProvider, type Job, type SummaryClip,
   type SummaryResult, type SummarySettings,
@@ -42,7 +43,7 @@ async function findCaptions(job: Job, s: SummarySettings, r: StepReporter): Prom
   const { dir } = artifacts(job.id);
   const uploaded = readdirSync(dir).find((n) => USER_CAPTIONS.test(n));
   if (uploaded) return { file: uploaded, language: s.language || null, what: "phụ đề bạn tải lên" };
-  if (job.sourceUrl) {
+  if (!RETAIL && job.sourceUrl) {
     r.detail("Đang hỏi trang video có phụ đề nào…");
     try {
       const got = await downloadCaptions(job.sourceUrl, dir, s.language, r.signal);
@@ -383,7 +384,7 @@ export async function runSummary(job: Job, signal: AbortSignal): Promise<void> {
   const s = summary.settings;
 
   // ── Download (jobs created from a link) ──
-  if (job.sourceUrl && !job.sourceFile) {
+  if (!RETAIL && job.sourceUrl && !job.sourceFile) {
     const info = job.sourceInfo;
     enter("download", `Bắt đầu tải video từ ${info?.platform ?? "link"}: ${job.sourceUrl}`);
     if (info) r.log(`"${info.title}"${info.uploader ? ` của ${info.uploader}` : ""}${info.durationSec ? ` · dài ${formatDuration(info.durationSec)}` : ""}`);

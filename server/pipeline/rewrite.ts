@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../config.js";
+import { RETAIL } from "../edition.js";
 import { FatalAiError, claudeComplete } from "../lib/claude.js";
 import { chunkText } from "../lib/text.js";
 import { formatChars } from "../lib/format.js";
@@ -60,7 +61,7 @@ const searchLabel = (opts: WriterOptions) => (opts.webSearch ? " + tìm web" : "
 
 function geminiWriter(systemInstruction: string, signal: AbortSignal, opts: WriterOptions): Writer {
   if (!config.geminiApiKey) {
-    throw new FatalAiError("Chưa cấu hình GEMINI_API_KEY trong .env.local (lấy key miễn phí tại https://aistudio.google.com/apikey), hoặc chuyển sang dùng Claude");
+    throw new FatalAiError(`Chưa có khoá Gemini: dán khoá ở trang Cài đặt (lấy miễn phí tại https://aistudio.google.com/apikey)${RETAIL ? "" : ", hoặc chuyển sang dùng Claude"}`);
   }
   const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
   return {
@@ -85,8 +86,9 @@ function claudeWriter(systemInstruction: string, signal: AbortSignal, opts: Writ
   };
 }
 
+/** A packaged copy has no Claude, so a job made before it was packaged writes with Gemini too. */
 export const makeWriter = (provider: AiProvider, systemInstruction: string, signal: AbortSignal, opts: WriterOptions = {}): Writer =>
-  provider === "claude" ? claudeWriter(systemInstruction, signal, opts) : geminiWriter(systemInstruction, signal, opts);
+  provider === "claude" && !RETAIL ? claudeWriter(systemInstruction, signal, opts) : geminiWriter(systemInstruction, signal, opts);
 
 /**
  * Rewrite the transcript chunk by chunk. Each finished chunk is cached on
